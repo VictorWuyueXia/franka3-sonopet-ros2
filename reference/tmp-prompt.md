@@ -46,3 +46,51 @@ ros2_ws/
     ├── recording/                      # recorder node. cloud, images, audio in -> start/end timestamps, frame rates of each modality, start/end piont clouds (each and stitched), video and audio. Saved to an experiment artifact package. 
     ├── tests/
 ├── third_party.repos
+
+
+
+
+
+
+
+Keep `third_party.repos` as-is in the repo. Do not commit cloned third-party source into your project.
+
+Use it as the reproducible dependency manifest:
+
+```bash
+cd ros2_ws
+vcs import src < third_party.repos
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+```
+
+That will clone `franka_ros2` and `realsense-ros` into `ros2_ws/src/` locally. The clones stay in your working tree for development/building, but the `.repos` file is the thing you version-control. After cloning, `git status` will show those folders as untracked unless we ignore them or manage them intentionally. I recommend adding third-party clone paths to `.gitignore` once imported.
+
+Recommended next steps:
+
+1. **Lock dependency strategy**
+   - Keep `third_party.repos`.
+   - Import upstream repos locally with `vcs`.
+   - Add `ros2_ws/src/franka_ros2/` and `ros2_ws/src/realsense-ros/` to `.gitignore` after import.
+
+2. **Review launch correctness against real upstream args**
+   - Verify `franka.launch.py` matches the actual `franka_fr3_moveit_config` Jazzy launch arguments.
+   - Verify `cameras.launch.py` matches current `realsense2_camera/rs_launch.py` parameters.
+   - This is the most important next check before building behavior.
+
+3. **Add the missing description package**
+   - We planned Sonopet as an end-effector frame, but the first batch did not add `fr3_sonopet_description`.
+   - Next batch should add fixed `sonopet_tcp` description/Xacro overlay and make MoveIt/TF aware of it.
+
+4. **Turn placeholder nodes into interface shells**
+   - Add publishers/action servers without real logic yet:
+     - trajectory publishes `/sonopet/raster_plan`
+     - supervisor publishes `/sonopet/run_state`
+     - motion exposes preview/execute action boundary
+     - recording exposes start/stop boundary
+
+5. **Choose the first real workflow slice**
+   - I recommend: fake experiment first.
+   - Goal: `fake_experiment.launch.py` starts, publishes run state, builds a tiny fixture raster, sends it to motion as a dry-run, and writes a manifest. No camera, no robot, no hardware drama yet.
+
+Tiny engineering compass: first make the skeleton truthfully launch and talk to itself, then connect upstream Franka/RealSense. That keeps the whole thing calm and debuggable.
