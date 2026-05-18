@@ -1,0 +1,8 @@
+fr3_sonopet_interfaces/RasterPlan plan
+string confirmation_token
+---
+bool success
+string message
+---
+string active_segment
+

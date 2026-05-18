@@ -1,0 +1,9 @@
+geometry_msgs/Point selected_center
+string cloud_source
+---
+bool success
+string message
+fr3_sonopet_interfaces/RasterPlan plan
+---
+string phase
+

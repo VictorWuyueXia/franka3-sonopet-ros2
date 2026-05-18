@@ -1,0 +1,9 @@
+string run_id
+bool start
+---
+bool success
+string message
+string artifact_path
+---
+string phase
+

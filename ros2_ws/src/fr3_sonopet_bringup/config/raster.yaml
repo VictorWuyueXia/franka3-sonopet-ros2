@@ -1,0 +1,20 @@
+raster:
+  target_frame: fr3_link0
+  planning_cloud: in_hand
+  patch_selection: rviz_point
+  square_side_m: 0.02
+  line_spacing_m: 0.002
+  downsample_rate: 6
+  pattern: unidirectional_retract
+  crop_distance_m: 0.5
+  outlier_trim_fraction: 0.2
+  normal_search_radius_m: 0.02
+  min_normal_points: 3
+  tool_normal_sign: -1.0
+
+stitching:
+  enabled: false
+  fixed_cloud_moves: true
+  coarse_method: point_to_plane_icp
+  refine_method: colored_icp
+

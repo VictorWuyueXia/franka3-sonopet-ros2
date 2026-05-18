@@ -1,0 +1,17 @@
+recording:
+  storage_id: mcap
+  artifact_root: artifacts/experiments
+  topics:
+    - /joint_states
+    - /tf
+    - /tf_static
+    - /sonopet/run_state
+    - /sonopet/raster_plan
+    - /in_hand_d405/d405_in_hand/color/image_raw
+    - /in_hand_d405/d405_in_hand/aligned_depth_to_color/image_raw
+    - /in_hand_d405/d405_in_hand/depth/color/points
+    - /fixed_d405/d405_fixed/color/image_raw
+    - /fixed_d405/d405_fixed/aligned_depth_to_color/image_raw
+    - /fixed_d405/d405_fixed/depth/color/points
+    - /microphone/audio
+

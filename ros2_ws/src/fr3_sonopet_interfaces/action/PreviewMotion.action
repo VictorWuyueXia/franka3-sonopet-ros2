@@ -1,0 +1,7 @@
+fr3_sonopet_interfaces/RasterPlan plan
+---
+bool success
+string message
+---
+string phase
+

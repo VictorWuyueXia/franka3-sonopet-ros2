@@ -1,0 +1,23 @@
+cameras:
+  in_hand:
+    serial: "323622273258"
+    namespace: in_hand_d405
+    camera_name: d405_in_hand
+    parent_frame: sonopet_tcp
+    optical_frame: d405_in_hand_color_optical_frame
+    planning_source: true
+  fixed:
+    serial: "427622272709"
+    namespace: fixed_d405
+    camera_name: d405_fixed
+    parent_frame: fr3_link0
+    optical_frame: d405_fixed_color_optical_frame
+    planning_source: false
+
+realsense:
+  align_depth_enable: true
+  pointcloud_enable: true
+  rgb_camera_profile: 848x480x30
+  depth_module_profile: 848x480x30
+  initial_reset: false
+

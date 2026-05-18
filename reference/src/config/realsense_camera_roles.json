@@ -1,0 +1,10 @@
+{
+  "camera-fixed": {
+    "serial": "427622272709",
+    "description": "Fixed D405 with eye-to-hand extrinsics."
+  },
+  "camera-in-hand": {
+    "serial": "323622273258",
+    "description": "End-effector D405 for eye-in-hand capture."
+  }
+}

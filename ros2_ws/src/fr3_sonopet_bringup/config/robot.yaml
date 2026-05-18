@@ -1,0 +1,12 @@
+robot:
+  type: fr3
+  robot_ip: 172.16.0.2
+  base_frame: fr3_link0
+  flange_frame: fr3_link8
+  tool_frame: sonopet_tcp
+  use_fake_hardware: false
+
+controllers:
+  joint_trajectory: joint_trajectory_controller
+  robot_state_broadcaster: robot_state_broadcaster
+

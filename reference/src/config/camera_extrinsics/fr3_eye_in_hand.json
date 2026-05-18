@@ -1,0 +1,15 @@
+{
+  "parent_frame": "fr3_hand_tcp",
+  "child_frame": "camera_color_optical_frame",
+  "translation_xyz": [
+    0.101503,
+    -0.090549,
+    -0.088539
+  ],
+  "quaternion_xyzw": [
+    0.0349924,
+    -0.115182,
+    0.919671,
+    -0.373783
+  ]
+}

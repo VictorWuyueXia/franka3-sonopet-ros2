@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>fr3_sonopet_recording</name>
+  <version>0.1.0</version>
+  <description>Recording policy and artifact manifests for the FR3 Sonopet experiment.</description>
+  <maintainer email="victor@example.com">Victor Xia</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>fr3_sonopet_interfaces</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>
+
