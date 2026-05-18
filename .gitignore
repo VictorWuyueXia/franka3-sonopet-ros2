@@ -10,6 +10,8 @@ log/
 ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
+ros2_ws/src/franka_ros2/
+ros2_ws/src/realsense-ros/
 
 artifacts/
 *.db3
@@ -18,4 +20,8 @@ artifacts/
 .DS_Store
 .idea/
 .vscode/
+.envrc
 
+# Local macOS light-development helpers; Ubuntu ROS setup is the shared path.
+scripts/*macos*.sh
+environment.yml

@@ -1,8 +1,16 @@
+# Trajectory plan generated for the motion to execute
 fr3_sonopet_interfaces/RasterPlan plan
-string confirmation_token
----
-bool success
-string message
----
-string active_segment
 
+# Operator-provided token to confirm execution
+string confirmation_token
+
+---
+# Whether motion execution was successful
+bool success
+
+# Human-readable information about the result
+string message
+
+---
+# Name of the currently executing motion segment
+string active_segment

@@ -94,3 +94,7 @@ Recommended next steps:
    - Goal: `fake_experiment.launch.py` starts, publishes run state, builds a tiny fixture raster, sends it to motion as a dry-run, and writes a manifest. No camera, no robot, no hardware drama yet.
 
 Tiny engineering compass: first make the skeleton truthfully launch and talk to itself, then connect upstream Franka/RealSense. That keeps the whole thing calm and debuggable.
+
+
+
+add simple concise one-line comments explaining key logic steps targeting non-ros enginneers

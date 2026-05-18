@@ -7,9 +7,19 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def _include(name: str):
+    # Local includes keep each hardware boundary readable in isolation.
     return IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([FindPackageShare("fr3_sonopet_bringup"), "launch", name])
+        )
+    )
+
+
+def _description_include(name: str):
+    # Description includes publish experiment-specific fixed frames outside vendor packages.
+    return IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([FindPackageShare("fr3_sonopet_description"), "launch", name])
         )
     )
 
@@ -18,6 +28,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             _include("franka.launch.py"),
+            _description_include("sonopet_tcp.launch.py"),
             _include("cameras.launch.py"),
             _include("microphone.launch.py"),
             _include("recording.launch.py"),
@@ -41,4 +52,3 @@ def generate_launch_description():
             ),
         ]
     )
-

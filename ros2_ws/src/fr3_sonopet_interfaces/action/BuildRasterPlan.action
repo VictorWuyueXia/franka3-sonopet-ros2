@@ -1,9 +1,19 @@
+# Cartesian center selected by the operator or perception system.
 geometry_msgs/Point selected_center
-string cloud_source
----
-bool success
-string message
-fr3_sonopet_interfaces/RasterPlan plan
----
-string phase
 
+# Named source of the point cloud used to estimate the local tissue surface.
+string cloud_source
+
+---
+# True when a geometrically valid raster plan was generated.
+bool success
+
+# Human-readable diagnostic message for logs and operator feedback.
+string message
+
+# Complete raster trajectory and associated planning metadata.
+fr3_sonopet_interfaces/RasterPlan plan
+
+---
+# Current high-level planning phase reported by the action server.
+string phase

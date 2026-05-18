@@ -1,5 +1,4 @@
-""" Static transform publisher acquired via MoveIt 2 hand-eye calibration """
-""" EYE-IN-HAND: fr3_hand_tcp -> camera_color_optical_frame """
+"""Publish the calibrated eye-in-hand D405 transform in the Franka TF tree."""
 import json
 from pathlib import Path
 

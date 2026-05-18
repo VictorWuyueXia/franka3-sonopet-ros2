@@ -1,6 +1,6 @@
 {
   "parent_frame": "fr3_hand_tcp",
-  "child_frame": "camera_color_optical_frame",
+  "child_frame": "d405_in_hand_color_optical_frame",
   "translation_xyz": [
     0.101503,
     -0.090549,

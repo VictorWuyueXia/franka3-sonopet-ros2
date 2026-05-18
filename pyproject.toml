@@ -1,6 +1,13 @@
 [tool.pytest.ini_options]
 testpaths = ["ros2_ws/src"]
 python_files = ["test_*.py"]
+pythonpath = [
+    "ros2_ws/src/fr3_sonopet_microphone/src",
+    "ros2_ws/src/fr3_sonopet_motion/src",
+    "ros2_ws/src/fr3_sonopet_recording/src",
+    "ros2_ws/src/fr3_sonopet_supervisor/src",
+    "ros2_ws/src/fr3_sonopet_trajectory/src",
+]
 
 [tool.ruff]
 line-length = 100
@@ -8,4 +15,3 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-

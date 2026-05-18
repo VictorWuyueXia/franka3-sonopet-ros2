@@ -11,8 +11,8 @@ class PatchSelection:
 
 
 def validate_selection(selection: PatchSelection) -> None:
+    # A selected patch must carry enough frame information to be transformed safely.
     if not selection.frame_id:
         raise ValueError("Patch selection must include a frame_id")
     if len(selection.center_xyz) != 3:
         raise ValueError("Patch selection center must contain exactly three values")
-

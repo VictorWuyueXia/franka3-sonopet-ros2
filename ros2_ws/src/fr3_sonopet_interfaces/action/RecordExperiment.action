@@ -1,9 +1,8 @@
-string run_id
-bool start
+string run_id        # Unique ID for this experiment run
+bool start           # Set to true to begin or false to end recording
 ---
-bool success
-string message
-string artifact_path
+bool success         # Indicates if recording was successful
+string message       # Additional information or error details
+string artifact_path # Location where the experiment data was saved
 ---
-string phase
-
+string phase         # Current stage or status of the recording

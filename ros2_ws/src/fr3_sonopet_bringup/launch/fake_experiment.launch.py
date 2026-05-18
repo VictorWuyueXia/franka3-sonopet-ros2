@@ -6,7 +6,17 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
+def _description_include(name: str):
+    # Fake launch still publishes the tool frame so TF consumers see the same graph.
+    return IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([FindPackageShare("fr3_sonopet_description"), "launch", name])
+        )
+    )
+
+
 def generate_launch_description():
+    # Fake hardware uses the same upstream Franka launch with non-hardware arguments.
     fake_franka = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -19,6 +29,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             fake_franka,
+            _description_include("sonopet_tcp.launch.py"),
             Node(
                 package="fr3_sonopet_trajectory",
                 executable="raster_planner_node",
@@ -42,4 +53,3 @@ def generate_launch_description():
             ),
         ]
     )
-

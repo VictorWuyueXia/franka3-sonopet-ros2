@@ -1,6 +1,6 @@
 {
   "parent_frame": "fr3_link0",
-  "child_frame": "camera_color_optical_frame",
+  "child_frame": "d405_fixed_color_optical_frame",
   "translation_xyz": [
     0.448819,
     0.28769,

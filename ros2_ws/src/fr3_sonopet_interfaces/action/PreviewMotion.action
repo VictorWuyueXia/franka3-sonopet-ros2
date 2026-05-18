@@ -1,7 +1,6 @@
-fr3_sonopet_interfaces/RasterPlan plan
+fr3_sonopet_interfaces/RasterPlan plan   # Planned trajectory to preview before actual motion
 ---
-bool success
-string message
+bool success                            # Indicates if a valid preview was generated
+string message                          # Diagnostic or feedback information for users
 ---
-string phase
-
+string phase                            # Current step or mode of the preview process

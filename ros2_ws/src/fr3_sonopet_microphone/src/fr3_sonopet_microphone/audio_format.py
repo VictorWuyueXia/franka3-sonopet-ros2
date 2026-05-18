@@ -11,5 +11,5 @@ class AudioFormat:
 
 
 def describe_audio_format(audio_format: AudioFormat) -> str:
+    # Compact format text keeps runtime logs useful during launch smoke tests.
     return f"{audio_format.sample_rate_hz}Hz/{audio_format.channels}ch/{audio_format.encoding}"
-

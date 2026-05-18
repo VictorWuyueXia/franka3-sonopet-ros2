@@ -7,7 +7,7 @@ from fr3_sonopet_microphone.audio_format import AudioFormat, describe_audio_form
 
 
 class MicrophoneNode(Node):
-    """Placeholder microphone node; real audio publishing comes next."""
+    """Interface shell for microphone stream settings."""
 
     def __init__(self) -> None:
         super().__init__("microphone_node")
@@ -17,7 +17,7 @@ class MicrophoneNode(Node):
             sample_rate_hz=int(self.get_parameter("sample_rate_hz").value),
             channels=int(self.get_parameter("channels").value),
         )
-        self.get_logger().info(f"Microphone placeholder ready: {describe_audio_format(audio_format)}")
+        self.get_logger().info(f"Microphone interface ready: {describe_audio_format(audio_format)}")
 
 
 def main() -> None:
@@ -28,4 +28,3 @@ def main() -> None:
     finally:
         node.destroy_node()
         rclpy.shutdown()
-
