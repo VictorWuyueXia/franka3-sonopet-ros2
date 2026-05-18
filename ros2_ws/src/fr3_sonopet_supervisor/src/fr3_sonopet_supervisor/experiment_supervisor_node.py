@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import rclpy
+from fr3_sonopet_interfaces.msg import RunState as RunStateMsg
 from rclpy.node import Node
 
-from fr3_sonopet_interfaces.msg import RunState as RunStateMsg
 from fr3_sonopet_supervisor.run_state import RunState
 
 

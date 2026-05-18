@@ -11,6 +11,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RasterPatch.msg"
   "msg/RasterPlan.msg"
   "msg/RunState.msg"
+  "msg/AudioChunk.msg"
   "action/BuildRasterPlan.action"
   "action/PreviewMotion.action"
   "action/ExecuteMotion.action"
@@ -20,4 +21,3 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
-

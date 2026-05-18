@@ -18,6 +18,9 @@ setup(
     maintainer_email="victor@example.com",
     description="Recording policy and artifact manifests for the FR3 Sonopet experiment.",
     license="MIT",
-    entry_points={"console_scripts": ["recording_node = fr3_sonopet_recording.recording_node:main"]},
+    entry_points={
+        "console_scripts": [
+            "recording_node = fr3_sonopet_recording.recording_node:main",
+        ],
+    },
 )
-

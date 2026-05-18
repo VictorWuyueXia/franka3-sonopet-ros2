@@ -1,17 +1,26 @@
 recording:
-  storage_id: mcap
   artifact_root: artifacts/experiments
-  topics:
-    - /joint_states
-    - /tf
-    - /tf_static
-    - /sonopet/run_state
-    - /sonopet/raster_plan
-    - /in_hand_d405/d405_in_hand/color/image_raw
-    - /in_hand_d405/d405_in_hand/aligned_depth_to_color/image_raw
-    - /in_hand_d405/d405_in_hand/depth/color/points
-    - /fixed_d405/d405_fixed/color/image_raw
-    - /fixed_d405/d405_fixed/aligned_depth_to_color/image_raw
-    - /fixed_d405/d405_fixed/depth/color/points
-    - /microphone/audio
-
+  rgb_video:
+    codec: MJPG
+    fps: 15.0
+  audio:
+    topic: /microphone/audio
+    directory: audio
+  pointcloud_snapshots:
+    enabled: true
+    timeout_sec: 5.0
+    output_format: pcd
+    start_label: start
+    end_label: end
+    require_success: false
+  cameras:
+    in_hand:
+      directory: camera_in_hand
+      rgb_topic: /in_hand_d405/d405_in_hand/color/image_raw
+      pointcloud_topic: /in_hand_d405/d405_in_hand/depth/color/points
+      parameter_service: /in_hand_d405/d405_in_hand/set_parameters
+    fixed:
+      directory: camera_fixed
+      rgb_topic: /fixed_d405/d405_fixed/color/image_raw
+      pointcloud_topic: /fixed_d405/d405_fixed/depth/color/points
+      parameter_service: /fixed_d405/d405_fixed/set_parameters

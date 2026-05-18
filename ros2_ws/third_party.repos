@@ -6,5 +6,4 @@ repositories:
   realsense-ros:
     type: git
     url: https://github.com/realsenseai/realsense-ros.git
-    version: ros2-master
-
+    version: 4.56.4

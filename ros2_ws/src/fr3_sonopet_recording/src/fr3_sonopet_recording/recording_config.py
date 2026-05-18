@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+@dataclass(frozen=True)
+class CameraRecordingSpec:
+    key: str
+    directory: str
+    rgb_topic: str
+    pointcloud_topic: str
+    parameter_service: str
+
+
+@dataclass(frozen=True)
+class SnapshotConfig:
+    enabled: bool = True
+    timeout_sec: float = 5.0
+    output_format: str = "pcd"
+    start_label: str = "start"
+    end_label: str = "end"
+    require_success: bool = False
+
+
+@dataclass(frozen=True)
+class RecordingConfig:
+    artifact_root: Path
+    audio_topic: str
+    audio_directory: str
+    video_codec: str
+    video_fps: float
+    cameras: tuple[CameraRecordingSpec, ...]
+    snapshots: SnapshotConfig
+
+
+def _require_absolute_topic(topic: str) -> str:
+    if not topic.startswith("/"):
+        raise ValueError(f"Recording topic must be absolute: {topic}")
+    return topic
+
+
+def _camera_from_payload(key: str, payload: dict[str, Any]) -> CameraRecordingSpec:
+    return CameraRecordingSpec(
+        key=key,
+        directory=str(payload["directory"]),
+        rgb_topic=_require_absolute_topic(str(payload["rgb_topic"])),
+        pointcloud_topic=_require_absolute_topic(str(payload["pointcloud_topic"])),
+        parameter_service=_require_absolute_topic(str(payload["parameter_service"])),
+    )
+
+
+def load_recording_config(path: str | Path) -> RecordingConfig:
+    """Load recording artifact policy from the bringup YAML configuration."""
+
+    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    recording = payload["recording"]
+    video = recording.get("rgb_video", {})
+    audio = recording.get("audio", {})
+    snapshots = recording.get("pointcloud_snapshots", {})
+    cameras = recording.get("cameras", {})
+
+    return RecordingConfig(
+        artifact_root=Path(str(recording.get("artifact_root", "artifacts/experiments"))),
+        audio_topic=_require_absolute_topic(str(audio.get("topic", "/microphone/audio"))),
+        audio_directory=str(audio.get("directory", "audio")),
+        video_codec=str(video.get("codec", "MJPG")),
+        video_fps=float(video.get("fps", 30.0)),
+        cameras=tuple(_camera_from_payload(key, value) for key, value in cameras.items()),
+        snapshots=SnapshotConfig(
+            enabled=bool(snapshots.get("enabled", True)),
+            timeout_sec=float(snapshots.get("timeout_sec", 5.0)),
+            output_format=str(snapshots.get("output_format", "pcd")),
+            start_label=str(snapshots.get("start_label", "start")),
+            end_label=str(snapshots.get("end_label", "end")),
+            require_success=bool(snapshots.get("require_success", False)),
+        ),
+    )
+
+
+def recording_topics(config: RecordingConfig) -> tuple[str, ...]:
+    """Return continuously consumed topics for validation and launch-time diagnostics."""
+
+    return tuple([config.audio_topic, *(camera.rgb_topic for camera in config.cameras)])

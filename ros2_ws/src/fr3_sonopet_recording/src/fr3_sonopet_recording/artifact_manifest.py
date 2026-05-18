@@ -7,9 +7,10 @@ from dataclasses import asdict, dataclass
 class RecordingManifest:
     run_id: str
     artifact_path: str
-    storage_id: str = "mcap"
+    video_format: str = "avi"
+    audio_format: str = "wav"
+    pointcloud_format: str = "pcd"
 
 
 def manifest_dict(manifest: RecordingManifest) -> dict[str, str]:
     return asdict(manifest)
-

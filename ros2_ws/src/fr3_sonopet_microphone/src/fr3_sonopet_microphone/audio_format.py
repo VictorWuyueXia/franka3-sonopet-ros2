@@ -8,6 +8,7 @@ class AudioFormat:
     sample_rate_hz: int = 48_000
     channels: int = 1
     encoding: str = "S16_LE"
+    chunk_frames: int = 1024
 
 
 def describe_audio_format(audio_format: AudioFormat) -> str:

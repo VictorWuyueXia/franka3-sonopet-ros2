@@ -7,6 +7,20 @@ Visualization Manager:
     - Class: rviz_default_plugins/Grid
       Enabled: true
       Name: Grid
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Name: TF
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Image Topic:
+        Value: /in_hand_d405/d405_in_hand/color/image_raw
+      Name: In Hand RGB
+      Transport Hint: raw
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Image Topic:
+        Value: /fixed_d405/d405_fixed/color/image_raw
+      Name: Fixed RGB
+      Transport Hint: raw
   Global Options:
     Fixed Frame: fr3_link0
-

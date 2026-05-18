@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 Point3 = tuple[float, float, float]
 
 

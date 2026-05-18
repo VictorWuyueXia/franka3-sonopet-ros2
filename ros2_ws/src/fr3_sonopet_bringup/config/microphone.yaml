@@ -1,0 +1,11 @@
+microphone_node:
+  ros__parameters:
+    preferred_device_names:
+      - iMM-6C
+      - imm6c
+    device: ""
+    fail_if_preferred_not_found: true
+    sample_rate_hz: 48000
+    channels: 1
+    chunk_frames: 1024
+    queue_depth: 32

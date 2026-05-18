@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import rclpy
+from fr3_sonopet_interfaces.action import ExecuteMotion, PreviewMotion
 from rclpy.action import ActionServer
 from rclpy.node import Node
 
-from fr3_sonopet_interfaces.action import ExecuteMotion, PreviewMotion
 from fr3_sonopet_motion.moveit_client import MoveItPolicy, describe_policy
 from fr3_sonopet_motion.operator_policy import EXECUTE_TOKEN
 

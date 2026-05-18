@@ -16,8 +16,11 @@ setup(
     zip_safe=True,
     maintainer="Victor Xia",
     maintainer_email="victor@example.com",
-    description="Microphone publishing placeholder for the FR3 Sonopet experiment.",
+    description="Configured microphone publisher for the FR3 Sonopet experiment.",
     license="MIT",
-    entry_points={"console_scripts": ["microphone_node = fr3_sonopet_microphone.microphone_node:main"]},
+    entry_points={
+        "console_scripts": [
+            "microphone_node = fr3_sonopet_microphone.microphone_node:main",
+        ],
+    },
 )
-

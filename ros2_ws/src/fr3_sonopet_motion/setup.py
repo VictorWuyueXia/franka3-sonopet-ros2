@@ -18,6 +18,9 @@ setup(
     maintainer_email="victor@example.com",
     description="MoveIt-facing motion policy for the FR3 Sonopet experiment.",
     license="MIT",
-    entry_points={"console_scripts": ["motion_runner_node = fr3_sonopet_motion.motion_runner_node:main"]},
+    entry_points={
+        "console_scripts": [
+            "motion_runner_node = fr3_sonopet_motion.motion_runner_node:main",
+        ],
+    },
 )
-

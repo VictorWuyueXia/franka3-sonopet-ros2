@@ -6,8 +6,13 @@
   <maintainer email="victor@example.com">Victor Xia</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>cv_bridge</exec_depend>
   <exec_depend>fr3_sonopet_interfaces</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <export><build_type>ament_python</build_type></export>
 </package>
-

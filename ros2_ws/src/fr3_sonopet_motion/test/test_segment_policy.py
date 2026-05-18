@@ -1,5 +1,4 @@
 import pytest
-
 from fr3_sonopet_motion.segment_policy import validate_segment_order
 
 

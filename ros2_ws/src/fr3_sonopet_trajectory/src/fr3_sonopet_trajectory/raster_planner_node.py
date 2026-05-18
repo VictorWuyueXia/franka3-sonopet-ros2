@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import rclpy
+from fr3_sonopet_interfaces.action import BuildRasterPlan
+from fr3_sonopet_interfaces.msg import RasterPatch, RasterPlan
 from geometry_msgs.msg import Point, PoseArray
 from rclpy.action import ActionServer
 from rclpy.node import Node
 from std_msgs.msg import Header
-
-from fr3_sonopet_interfaces.action import BuildRasterPlan
-from fr3_sonopet_interfaces.msg import RasterPatch, RasterPlan
 
 
 class RasterPlannerNode(Node):
@@ -29,7 +28,8 @@ class RasterPlannerNode(Node):
             self._execute_build_plan,
         )
         self.get_logger().info(
-            f"Raster planner ready: base_frame={self._base_frame}, planning_cloud={self._planning_cloud}"
+            "Raster planner ready: "
+            f"base_frame={self._base_frame}, planning_cloud={self._planning_cloud}"
         )
 
     def _execute_build_plan(self, goal_handle):

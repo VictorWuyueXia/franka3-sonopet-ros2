@@ -16,8 +16,14 @@ cameras:
 
 realsense:
   align_depth_enable: true
-  pointcloud_enable: true
+  pointcloud_enable: false
   rgb_camera_profile: 848x480x30
   depth_module_profile: 848x480x30
   initial_reset: false
 
+pointcloud_snapshots:
+  enabled: true
+  timeout_sec: 5.0
+  output_format: pcd
+  start_label: start
+  end_label: end

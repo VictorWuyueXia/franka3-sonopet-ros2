@@ -7,16 +7,16 @@ The project intentionally delegates hardware ownership to upstream packages:
 
 - Franka robot control and MoveIt integration: `frankarobotics/franka_ros2`
 - RealSense D405 camera drivers: `realsenseai/realsense-ros`
-- Recording transport: `rosbag2`
 
 Our code owns only experiment-specific orchestration, raster planning policy,
-motion request policy, microphone publishing, and run manifests.
+motion request policy, microphone publishing, and practical experiment
+artifacts.
 
 ## Ubuntu 24.04 ROS 2 Jazzy Setup
 
 Ubuntu 24.04 with ROS 2 Jazzy is the supported development and runtime system for
-this workspace. macOS can be used for editing and pure-Python checks, but Franka,
-RealSense, MoveIt, rosbag2, and full launch testing belong on Ubuntu.
+this workspace. Franka, RealSense, MoveIt, and full launch testing belong on
+Ubuntu.
 
 Install ROS 2 Jazzy from the official ROS instructions first, then install the
 workspace tooling:
@@ -38,10 +38,19 @@ cd ros2_ws
 vcs import src < third_party.repos
 ```
 
-Install ROS package dependencies and build:
+Install ROS package dependencies where rosdep rules are available, then build the
+hardware/vendor overlay. Some upstream Franka example packages reference optional
+rosdep keys that are not published for Ubuntu Noble/Jazzy; the core FR3 Sonopet
+overlay does not require those optional packages. Upstream vendor tests are
+disabled here because this workspace consumes their runtime packages and launch
+files, while vendor CI owns their exhaustive package tests:
 
 ```bash
-rosdep install --from-paths src --ignore-src -r -y
+rosdep install --from-paths src --ignore-src -r -y || true
+# Review rosdep output and install any required system packages that resolved.
+colcon build --symlink-install \
+  --packages-up-to franka_fr3_moveit_config realsense2_camera \
+  --cmake-args -DBUILD_TESTING=OFF -DCMAKE_IGNORE_PREFIX_PATH=/usr/local
 colcon build --symlink-install
 ```
 
@@ -54,28 +63,71 @@ ros2_ws/src/realsense-ros/
 
 `third_party.repos` remains the version-controlled dependency manifest.
 
+If the host has an older manually installed libfranka under `/usr/local`, source
+`scripts/source_ubuntu24_ros_jazzy.sh` before building. The script keeps the
+Jazzy package-managed Franka headers ahead of stale local headers without
+modifying system files.
+
 ## Light Python Checks
 
 Install the small Python-only developer helpers when needed:
 
 ```bash
-python3 -m pip install -r requirements-dev.txt
+python3 -m venv --system-site-packages .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
 Run the pure-Python tests without hardware:
 
 ```bash
 pytest \
-  ros2_ws/src/fr3_sonopet_microphone/test/test_audio_format.py \
+  ros2_ws/src/fr3_sonopet_bringup/test \
+  ros2_ws/src/fr3_sonopet_microphone/test \
   ros2_ws/src/fr3_sonopet_supervisor/test/test_operator_gates.py \
   ros2_ws/src/fr3_sonopet_motion/test/test_segment_policy.py \
-  ros2_ws/src/fr3_sonopet_recording/test/test_topic_policy.py \
+  ros2_ws/src/fr3_sonopet_recording/test \
   ros2_ws/src/fr3_sonopet_trajectory/test/test_raster_pattern.py \
   ros2_ws/src/fr3_sonopet_trajectory/test/test_surface_geometry.py
 ```
 
-<!-- ## Local macOS Convenience
+## Sensor Recording Workflow
 
-macOS-specific Conda environments, IDE settings, and terminal hooks are local
-developer conveniences and are ignored by Git. Keep them out of shared setup
-unless they are explicitly made platform-neutral. -->
+Launch the sensor-only workflow for the two D405 cameras, configured microphone,
+and artifact recorder:
+
+```bash
+source scripts/source_ubuntu24_ros_jazzy.sh
+ros2 launch fr3_sonopet_bringup sensors.launch.py
+```
+
+The default microphone policy is configured in
+`ros2_ws/src/fr3_sonopet_bringup/config/microphone.yaml`. It requires a device
+whose name contains `iMM-6C` or `imm6c` unless the config is changed.
+
+Continuous RGB topics remain active. Continuous point cloud output is disabled
+by default; the recorder temporarily enables each camera point cloud publisher
+only to save start and end PCD snapshots. Recording artifacts are written under
+`artifacts/experiments/<run_id>/`:
+
+```text
+manifest.json
+camera_in_hand/rgb.avi
+camera_in_hand/rgb_timestamps.csv
+camera_in_hand/pointcloud_start.pcd
+camera_in_hand/pointcloud_end.pcd
+camera_fixed/rgb.avi
+camera_fixed/rgb_timestamps.csv
+camera_fixed/pointcloud_start.pcd
+camera_fixed/pointcloud_end.pcd
+audio/audio.wav
+audio/audio_meta.json
+```
+
+Use standard ROS tools for inspection:
+
+```bash
+rqt_graph
+rqt_image_view
+ros2 topic hz /microphone/audio
+ros2 launch fr3_sonopet_bringup sensors.launch.py rviz:=true
+```

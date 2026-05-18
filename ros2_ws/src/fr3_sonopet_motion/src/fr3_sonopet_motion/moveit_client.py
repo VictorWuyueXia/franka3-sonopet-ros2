@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+
 # Immutable configuration describing core MoveIt planning settings
 @dataclass(frozen=True)
 class MoveItPolicy:

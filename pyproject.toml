@@ -12,6 +12,14 @@ pythonpath = [
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+exclude = [
+    ".reference",
+    "ros2_ws/build",
+    "ros2_ws/install",
+    "ros2_ws/log",
+    "ros2_ws/src/franka_ros2",
+    "ros2_ws/src/realsense-ros",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

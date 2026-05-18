@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 DEFAULT_SEGMENTS = (
     "current_to_idle",
     "idle_to_parking",
