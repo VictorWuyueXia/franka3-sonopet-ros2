@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 
 # Source this file in a Ubuntu 24.04 terminal before building or running the workspace.
-set -euo pipefail
+# Do not enable errexit in the caller's shell: colcon may exit 1 when optional vendor
+# packages fail even though fr3_sonopet_* built successfully.
+_sourced=0
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  _sourced=1
+  _fr3_sonopet_saved_shell_opts="$(set +o)"
+else
+  set -euo pipefail
+fi
 
 if [[ ! -f /opt/ros/jazzy/setup.bash ]]; then
   echo "ROS 2 Jazzy was not found at /opt/ros/jazzy/setup.bash."
@@ -51,3 +59,8 @@ fi
 
 export FR3_SONOPET_REPO="${PROJECT_ROOT}"
 echo "ROS 2 Jazzy environment loaded for ${PROJECT_ROOT}."
+
+if [[ "${_sourced}" -eq 1 ]]; then
+  eval "${_fr3_sonopet_saved_shell_opts}"
+  unset _fr3_sonopet_saved_shell_opts _sourced
+fi

@@ -18,6 +18,9 @@ def _realsense_launch(camera_key: str):
             "initial_reset": LaunchConfiguration("initial_reset"),
             "rgb_camera.color_profile": LaunchConfiguration("rgb_camera_color_profile"),
             "depth_module.depth_profile": LaunchConfiguration("depth_module_depth_profile"),
+            "depth_module.power_line_frequency": LaunchConfiguration(
+                "depth_module_power_line_frequency"
+            ),
             "align_depth.enable": "true",
             "pointcloud.enable": LaunchConfiguration("pointcloud_enable"),
         }.items(),
@@ -37,6 +40,7 @@ def generate_launch_description():
             DeclareLaunchArgument("initial_reset", default_value="false"),
             DeclareLaunchArgument("rgb_camera_color_profile", default_value="848x480x30"),
             DeclareLaunchArgument("depth_module_depth_profile", default_value="848x480x30"),
+            DeclareLaunchArgument("depth_module_power_line_frequency", default_value="2"),
             DeclareLaunchArgument("pointcloud_enable", default_value="false"),
             _realsense_launch("in_hand"),
             _realsense_launch("fixed"),

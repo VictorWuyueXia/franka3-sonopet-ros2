@@ -98,3 +98,11 @@ Tiny engineering compass: first make the skeleton truthfully launch and talk to 
 
 
 add simple concise one-line comments explaining key logic steps targeting non-ros enginneers
+
+
+
+
+
+1. What is /transform_listener_impl_555ecab8d830 ?
+2. Why do we have to use sturcture like "/in_hand_d405/d405_in_hand/"? Can we simplify it down?
+3. I have commented out the configs that are not necessary, as they will never be changed. Go dig into the code to remove any logics related to those config parameters, and replace with simplest realization of default value. (For many, there is no need to if() anymore as they are frozen now)

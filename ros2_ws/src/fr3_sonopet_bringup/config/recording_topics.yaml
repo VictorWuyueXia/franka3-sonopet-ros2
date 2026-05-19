@@ -16,11 +16,11 @@ recording:
   cameras:
     in_hand:
       directory: camera_in_hand
-      rgb_topic: /in_hand_d405/d405_in_hand/color/image_raw
+      rgb_topic: /in_hand_d405/d405_in_hand/color/image_rect_raw
       pointcloud_topic: /in_hand_d405/d405_in_hand/depth/color/points
       parameter_service: /in_hand_d405/d405_in_hand/set_parameters
     fixed:
       directory: camera_fixed
-      rgb_topic: /fixed_d405/d405_fixed/color/image_raw
+      rgb_topic: /fixed_d405/d405_fixed/color/image_rect_raw
       pointcloud_topic: /fixed_d405/d405_fixed/depth/color/points
       parameter_service: /fixed_d405/d405_fixed/set_parameters

@@ -12,15 +12,23 @@ Visualization Manager:
       Name: TF
     - Class: rviz_default_plugins/Image
       Enabled: true
-      Image Topic:
-        Value: /in_hand_d405/d405_in_hand/color/image_raw
       Name: In Hand RGB
-      Transport Hint: raw
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /in_hand_d405/d405_in_hand/color/image_rect_raw
+      Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
-      Image Topic:
-        Value: /fixed_d405/d405_fixed/color/image_raw
       Name: Fixed RGB
-      Transport Hint: raw
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /fixed_d405/d405_fixed/color/image_rect_raw
+      Value: true
   Global Options:
     Fixed Frame: fr3_link0
