@@ -14,17 +14,13 @@ def test_selects_imm6c_preferred_device_by_case_insensitive_substring():
     assert selected.name == "USB iMM-6C Calibrated Microphone"
 
 
-def test_selects_explicit_imm6c_name_before_preferred_list():
+def test_selects_first_matching_preferred_name_order():
     devices = [
         {"name": "iMM-6C backup", "max_input_channels": 1},
         {"name": "Primary imm6c interface", "max_input_channels": 2},
     ]
 
-    selected = select_input_device(
-        devices,
-        preferred_names=["iMM-6C"],
-        explicit_device="primary IMM6C",
-    )
+    selected = select_input_device(devices, preferred_names=["primary IMM6C", "iMM-6C"])
 
     assert selected.index == 1
     assert selected.channels == 2

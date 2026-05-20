@@ -48,27 +48,12 @@ def list_input_devices(devices: list[dict[str, Any]]) -> list[AudioInputDevice]:
 def select_input_device(
     devices: list[dict[str, Any]],
     preferred_names: list[str],
-    explicit_device: str = "",
-    fail_if_preferred_not_found: bool = True,
 ) -> AudioInputDevice:
-    """Resolve the microphone device from explicit config or preferred name substrings."""
+    """Resolve the configured microphone by case-insensitive preferred-name matching."""
 
     input_devices = list_input_devices(devices)
     if not input_devices:
         raise RuntimeError("No audio input devices are available")
-
-    explicit = explicit_device.strip()
-    if explicit:
-        if explicit.isdigit():
-            explicit_index = int(explicit)
-            for device in input_devices:
-                if device.index == explicit_index:
-                    return device
-        explicit_lower = explicit.lower()
-        for device in input_devices:
-            if explicit_lower in device.name.lower():
-                return device
-        raise RuntimeError(f"Configured microphone device was not found: {explicit}")
 
     normalized_preferences = [name.strip().lower() for name in preferred_names if name.strip()]
     for preferred_name in normalized_preferences:
@@ -76,11 +61,8 @@ def select_input_device(
             if preferred_name in device.name.lower():
                 return device
 
-    if fail_if_preferred_not_found:
-        available = ", ".join(device.name for device in input_devices)
-        preferred = ", ".join(preferred_names)
-        raise RuntimeError(
-            f"No configured microphone matched [{preferred}]. Available input devices: {available}"
-        )
-
-    return input_devices[0]
+    available = ", ".join(device.name for device in input_devices)
+    preferred = ", ".join(preferred_names)
+    raise RuntimeError(
+        f"No configured microphone matched [{preferred}]. Available input devices: {available}"
+    )

@@ -1,27 +1,33 @@
+from pathlib import Path
+
+import yaml
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
-CAMERA_NAMESPACE = "RealSense_D405"
-COLOR_PROFILE = "848x480x30"
-DEPTH_PROFILE = "848x480x30"
+
+def _camera_config():
+    path = Path(get_package_share_directory("fr3_sonopet_bringup")) / "config" / "cameras.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def _realsense_launch(camera_name: str, serial: str) -> IncludeLaunchDescription:
-    # RealSense owns sensor transport; this launch file fixes our experiment naming policy.
+def _realsense_launch(config: dict, camera_key: str) -> IncludeLaunchDescription:
+    camera = config["cameras"][camera_key]
+    realsense = config["realsense"]
     return IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([FindPackageShare("realsense2_camera"), "launch", "rs_launch.py"])
         ),
         launch_arguments={
-            "serial_no": f"_{serial}",
-            "camera_namespace": CAMERA_NAMESPACE,
-            "camera_name": camera_name,
+            "serial_no": f"_{camera['serial']}",
+            "camera_namespace": camera["namespace"],
+            "camera_name": camera["camera_name"],
             "initial_reset": "false",
-            "rgb_camera.color_profile": COLOR_PROFILE,
-            "depth_module.depth_profile": DEPTH_PROFILE,
+            "rgb_camera.color_profile": realsense["rgb_camera_profile"],
+            "depth_module.depth_profile": realsense["depth_module_profile"],
             "align_depth.enable": "true",
             "pointcloud.enable": "false",
         }.items(),
@@ -29,10 +35,10 @@ def _realsense_launch(camera_name: str, serial: str) -> IncludeLaunchDescription
 
 
 def generate_launch_description():
-    # Both D405 nodes share the device-class namespace and differ only by experiment role.
+    config = _camera_config()
     return LaunchDescription(
         [
-            _realsense_launch("in_hand", "323622273258"),
-            _realsense_launch("fixed", "427622272709"),
+            _realsense_launch(config, "in_hand"),
+            _realsense_launch(config, "fixed"),
         ]
     )

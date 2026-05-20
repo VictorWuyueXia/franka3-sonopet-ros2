@@ -10,31 +10,18 @@ import yaml
 @dataclass(frozen=True)
 class CameraRecordingSpec:
     key: str
-    directory: str
     rgb_topic: str
     pointcloud_topic: str
     parameter_service: str
 
 
 @dataclass(frozen=True)
-class SnapshotConfig:
-    enabled: bool
-    timeout_sec: float
-    output_format: str
-    start_label: str
-    end_label: str
-    require_success: bool
-
-
-@dataclass(frozen=True)
 class RecordingConfig:
     artifact_root: Path
     audio_topic: str
-    audio_directory: str
-    video_codec: str
     video_fps: float
+    snapshot_timeout_sec: float
     cameras: tuple[CameraRecordingSpec, ...]
-    snapshots: SnapshotConfig
 
 
 def _require_absolute_topic(topic: str) -> str:
@@ -46,40 +33,29 @@ def _require_absolute_topic(topic: str) -> str:
 def _camera_from_payload(key: str, payload: dict[str, Any]) -> CameraRecordingSpec:
     return CameraRecordingSpec(
         key=key,
-        directory=str(payload["directory"]),
         rgb_topic=_require_absolute_topic(str(payload["rgb_topic"])),
         pointcloud_topic=_require_absolute_topic(str(payload["pointcloud_topic"])),
         parameter_service=_require_absolute_topic(str(payload["parameter_service"])),
     )
 
 
-def load_recording_config(path: str | Path) -> RecordingConfig:
-    """Load recording artifact policy from the bringup YAML configuration."""
+def load_recording_config(recording_path: str | Path, camera_path: str | Path) -> RecordingConfig:
+    """Load only the recording values that remain intentionally configurable."""
 
-    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    recording = payload["recording"]
-    video = recording["rgb_video"]
+    recording_payload = yaml.safe_load(Path(recording_path).read_text(encoding="utf-8"))
+    camera_payload = yaml.safe_load(Path(camera_path).read_text(encoding="utf-8"))
+    recording = recording_payload["recording"]
     audio = recording["audio"]
-    snapshots = recording["pointcloud_snapshots"]
     cameras = recording["cameras"]
 
     return RecordingConfig(
         artifact_root=Path(str(recording["artifact_root"])),
         audio_topic=_require_absolute_topic(str(audio["topic"])),
-        audio_directory=str(audio["directory"]),
-        video_codec=str(video["codec"]),
-        video_fps=float(video["fps"]),
+        video_fps=float(camera_payload["realsense"]["fps"]),
+        snapshot_timeout_sec=float(camera_payload["pointcloud_snapshots"]["timeout_sec"]),
         cameras=(
             _camera_from_payload("in_hand", cameras["in_hand"]),
             _camera_from_payload("fixed", cameras["fixed"]),
-        ),
-        snapshots=SnapshotConfig(
-            enabled=bool(snapshots["enabled"]),
-            timeout_sec=float(snapshots["timeout_sec"]),
-            output_format=str(snapshots["output_format"]),
-            start_label=str(snapshots["start_label"]),
-            end_label=str(snapshots["end_label"]),
-            require_success=bool(snapshots["require_success"]),
         ),
     )
 

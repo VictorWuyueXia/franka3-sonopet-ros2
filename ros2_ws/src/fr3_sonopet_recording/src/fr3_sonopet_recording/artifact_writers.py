@@ -4,6 +4,8 @@ import csv
 import json
 import wave
 from array import array
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -12,14 +14,22 @@ import numpy as np
 from sensor_msgs_py import point_cloud2
 
 
+@dataclass(frozen=True)
+class SnapshotResult:
+    label: str
+    path: Path
+    success: bool
+    point_count: int = 0
+    error: str = ""
+
+
 class RgbVideoRecorder:
     """Write a camera RGB stream to an AVI file and a timestamp sidecar."""
 
-    def __init__(self, video_path: Path, timestamp_path: Path, fps: float, codec: str) -> None:
+    def __init__(self, video_path: Path, timestamp_path: Path, fps: float) -> None:
         self.video_path = video_path
         self.timestamp_path = timestamp_path
         self.fps = float(fps)
-        self.codec = codec
         self.frame_count = 0
         self._writer: cv2.VideoWriter | None = None
         self._csv_file = timestamp_path.open("w", newline="", encoding="utf-8")
@@ -29,7 +39,7 @@ class RgbVideoRecorder:
     def write_frame(self, frame_bgr: np.ndarray, stamp_sec: int, stamp_nanosec: int) -> None:
         if self._writer is None:
             height, width = frame_bgr.shape[:2]
-            fourcc = cv2.VideoWriter_fourcc(*self.codec)
+            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
             self._writer = cv2.VideoWriter(str(self.video_path), fourcc, self.fps, (width, height))
             if not self._writer.isOpened():
                 raise RuntimeError(f"Could not open RGB video writer: {self.video_path}")
@@ -135,3 +145,35 @@ def write_pointcloud_pcd(path: Path, cloud_msg) -> int:
         for x, y, z in points:
             stream.write(f"{x:.9g} {y:.9g} {z:.9g}\n")
     return len(points)
+
+
+def capture_pointcloud_snapshot(
+    label: str,
+    path: Path,
+    timeout_sec: float,
+    set_enabled: Callable[[bool], None],
+    receive_cloud: Callable[[float], Any],
+) -> SnapshotResult:
+    """Enable the RealSense pointcloud stream only around one PCD capture."""
+
+    result: SnapshotResult | None = None
+    try:
+        set_enabled(True)
+        point_count = write_pointcloud_pcd(path, receive_cloud(timeout_sec))
+        result = SnapshotResult(label=label, path=path, success=True, point_count=point_count)
+    except Exception as exc:
+        result = SnapshotResult(label=label, path=path, success=False, error=str(exc))
+    finally:
+        try:
+            set_enabled(False)
+        except Exception as exc:
+            if result is None or result.success:
+                result = SnapshotResult(label=label, path=path, success=False, error=str(exc))
+            else:
+                result = SnapshotResult(
+                    label=label,
+                    path=path,
+                    success=False,
+                    error=f"{result.error}; disable failed: {exc}",
+                )
+    return result

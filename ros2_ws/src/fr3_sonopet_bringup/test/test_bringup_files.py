@@ -24,8 +24,10 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     recording = (package_root / "config" / "recording_topics.yaml").read_text(encoding="utf-8")
     microphone = (package_root / "config" / "microphone.yaml").read_text(encoding="utf-8")
 
-    assert "pointcloud_enable: false" in cameras
-    assert "pointcloud_snapshots:" in recording
+    assert not any(line.lstrip().startswith("#") for line in cameras.splitlines())
+    assert not any(line.lstrip().startswith("#") for line in recording.splitlines())
+    assert "rgb_camera_profile: 848x480x30" in cameras
+    assert "pointcloud_snapshots:" in cameras
     assert "/RealSense_D405/in_hand/color/image_rect_raw" in recording
     assert "/RealSense_D405/fixed/color/image_rect_raw" in recording
     assert "/microphone/audio" in recording
@@ -43,10 +45,11 @@ def test_launch_files_use_sensor_only_recording_defaults():
         encoding="utf-8"
     )
 
-    assert '"camera_namespace": CAMERA_NAMESPACE' in cameras_launch
-    assert '"camera_name": camera_name' in cameras_launch
+    assert "cameras.yaml" in cameras_launch
+    assert '"camera_namespace": camera["namespace"]' in cameras_launch
+    assert '"camera_name": camera["camera_name"]' in cameras_launch
     assert '"pointcloud.enable": "false"' in cameras_launch
     assert "LaunchConfiguration" not in cameras_launch
-    assert 'CAMERA_NAMESPACE = "RealSense_D405"' in cameras_launch
     assert "recording_topics.yaml" in recording_launch
+    assert "cameras.yaml" in recording_launch
     assert "microphone.yaml" in microphone_launch

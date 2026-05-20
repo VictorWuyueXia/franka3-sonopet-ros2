@@ -5,8 +5,11 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    config_path = PathJoinSubstitution(
+    recording_config = PathJoinSubstitution(
         [FindPackageShare("fr3_sonopet_bringup"), "config", "recording_topics.yaml"]
+    )
+    camera_config = PathJoinSubstitution(
+        [FindPackageShare("fr3_sonopet_bringup"), "config", "cameras.yaml"]
     )
     return LaunchDescription(
         [
@@ -15,7 +18,12 @@ def generate_launch_description():
                 executable="recording_node",
                 name="recording_node",
                 output="screen",
-                parameters=[{"recording_config": config_path}],
+                parameters=[
+                    {
+                        "recording_config": recording_config,
+                        "camera_config": camera_config,
+                    }
+                ],
             ),
         ]
     )
