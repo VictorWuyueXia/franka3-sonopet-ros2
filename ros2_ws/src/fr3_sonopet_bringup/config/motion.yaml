@@ -6,16 +6,3 @@ motion:
   acceleration_scale: 0.05
   raster_velocity_scale: 0.005
   raster_acceleration_scale: 0.005
-  parking_lift_m: 0.05
-  retract_lift_m: 0.05
-  preview_required: true
-  execute_confirmation_token: EXECUTE
-
-segments:
-  - current_to_idle
-  - idle_to_parking
-  - parking_to_first
-  - raster
-  - retract
-  - return_to_start
-

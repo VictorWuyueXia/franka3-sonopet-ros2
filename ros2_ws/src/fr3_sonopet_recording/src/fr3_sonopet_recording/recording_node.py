@@ -39,6 +39,7 @@ from fr3_sonopet_recording.recording_config import (
 from fr3_sonopet_recording.run_guard import ActiveRun, RecordingRunGuard
 from fr3_sonopet_recording.topic_policy import require_topics
 
+
 # Holds all runtime resources for one current experiment recording session
 @dataclass
 class RecordingSession:
@@ -456,7 +457,10 @@ def main() -> None:
     executor.add_node(node)
     try:
         executor.spin()
+    except KeyboardInterrupt:
+        pass
     finally:
         executor.remove_node(node)
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

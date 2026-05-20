@@ -19,12 +19,18 @@ recording:
     output_format: pcd
     start_label: start
     end_label: end
+    require_success: false
   cameras:
     in_hand:
       directory: camera_in_hand
-      rgb_topic: /in_hand/color/image_raw
-      pointcloud_topic: /in_hand/depth/color/points
-      parameter_service: /in_hand/set_parameters
+      rgb_topic: /RealSense_D405/in_hand/color/image_rect_raw
+      pointcloud_topic: /RealSense_D405/in_hand/depth/color/points
+      parameter_service: /RealSense_D405/in_hand/set_parameters
+    fixed:
+      directory: camera_fixed
+      rgb_topic: /RealSense_D405/fixed/color/image_rect_raw
+      pointcloud_topic: /RealSense_D405/fixed/depth/color/points
+      parameter_service: /RealSense_D405/fixed/set_parameters
 """,
         encoding="utf-8",
     )
@@ -35,5 +41,6 @@ recording:
     assert config.snapshots.output_format == "pcd"
     assert recording_topics(config) == (
         "/microphone/audio",
-        "/in_hand/color/image_raw",
+        "/RealSense_D405/in_hand/color/image_rect_raw",
+        "/RealSense_D405/fixed/color/image_rect_raw",
     )

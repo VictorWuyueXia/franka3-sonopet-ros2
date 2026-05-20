@@ -104,5 +104,6 @@ add simple concise one-line comments explaining key logic steps targeting non-ro
 
 
 1. What is /transform_listener_impl_555ecab8d830 ?
-2. Why do we have to use sturcture like "/in_hand_d405/d405_in_hand/"? Can we simplify it down?
-3. I have commented out the configs that are not necessary, as they will never be changed. Go dig into the code to remove any logics related to those config parameters, and replace with simplest realization of default value. (For many, there is no need to if() anymore as they are frozen now)
+2. Why do we have to use sturcture like "/in_hand_d405/d405_in_hand/"? Can we simplify it down to "d405_in_hand/"?
+3. I have commented out the configs that are not necessary, as they will never be changed. Go dig into the code to remove any logics related to those config parameters, and replace with simplest realization of default value (according to current config values). For many, there is no need to if() or iterate anymore as they are frozen now. Also, remove any logic in the code that is falling back to default values outside of config. Assumes config values are present and valid.
+4. Let D405 save intrinsics in config as well, if there is not one already. And load the same intrinsics everytime.

@@ -1,26 +1,23 @@
 recording:
   artifact_root: artifacts/experiments
-  rgb_video:
-    codec: MJPG
-    fps: 15.0
   audio:
     topic: /microphone/audio
-    directory: audio
-  pointcloud_snapshots:
-    enabled: true
-    timeout_sec: 5.0
-    output_format: pcd
-    start_label: start
-    end_label: end
-    require_success: false
+    # directory: audio
+  # pointcloud_snapshots:
+  #   # enabled: true
+  #   # timeout_sec: 5.0
+  #   output_format: pcd
+  #   start_label: start
+  #   end_label: end
+  #   require_success: false
   cameras:
     in_hand:
-      directory: camera_in_hand
-      rgb_topic: /in_hand_d405/d405_in_hand/color/image_rect_raw
-      pointcloud_topic: /in_hand_d405/d405_in_hand/depth/color/points
-      parameter_service: /in_hand_d405/d405_in_hand/set_parameters
+      # directory: camera_in_hand
+      rgb_topic: /RealSense_D405/in_hand/color/image_rect_raw
+      pointcloud_topic: /RealSense_D405/in_hand/depth/color/points
+      parameter_service: /RealSense_D405/in_hand/set_parameters
     fixed:
-      directory: camera_fixed
-      rgb_topic: /fixed_d405/d405_fixed/color/image_rect_raw
-      pointcloud_topic: /fixed_d405/d405_fixed/depth/color/points
-      parameter_service: /fixed_d405/d405_fixed/set_parameters
+      # directory: camera_fixed
+      rgb_topic: /RealSense_D405/fixed/color/image_rect_raw
+      pointcloud_topic: /RealSense_D405/fixed/depth/color/points
+      parameter_service: /RealSense_D405/fixed/set_parameters

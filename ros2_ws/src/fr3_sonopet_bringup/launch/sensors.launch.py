@@ -24,6 +24,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("rviz", default_value="false"),
             _include_launch("cameras.launch.py"),
+            _include_launch("d405_intrinsics.launch.py"),
             _include_launch("microphone.launch.py"),
             _include_launch("recording.launch.py"),
             Node(

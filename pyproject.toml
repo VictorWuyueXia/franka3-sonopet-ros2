@@ -2,6 +2,7 @@
 testpaths = ["ros2_ws/src"]
 python_files = ["test_*.py"]
 pythonpath = [
+    "ros2_ws/src/fr3_sonopet_bringup/src",
     "ros2_ws/src/fr3_sonopet_microphone/src",
     "ros2_ws/src/fr3_sonopet_motion/src",
     "ros2_ws/src/fr3_sonopet_recording/src",

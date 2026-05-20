@@ -1,29 +1,32 @@
 cameras:
   in_hand:
     serial: "323622273258"
-    namespace: in_hand_d405
-    camera_name: d405_in_hand
+    namespace: RealSense_D405
+    camera_name: in_hand
     parent_frame: sonopet_tcp
-    optical_frame: d405_in_hand_color_optical_frame
+    optical_frame: in_hand_color_optical_frame
     planning_source: true
   fixed:
     serial: "427622272709"
-    namespace: fixed_d405
-    camera_name: d405_fixed
+    namespace: RealSense_D405
+    camera_name: fixed
     parent_frame: fr3_link0
-    optical_frame: d405_fixed_color_optical_frame
+    optical_frame: fixed_color_optical_frame
     planning_source: false
 
 realsense:
-  align_depth_enable: true
-  pointcloud_enable: false
+  # align_depth_enable: true
+  # pointcloud_enable: false
   rgb_camera_profile: 848x480x30
   depth_module_profile: 848x480x30
-  initial_reset: false
+  # initial_reset: false
+  # rgb_video:
+    # codec: MJPG
+  fps: 15.0
 
 pointcloud_snapshots:
-  enabled: true
+  # enabled: true
   timeout_sec: 5.0
-  output_format: pcd
-  start_label: start
-  end_label: end
+  # output_format: pcd
+  # start_label: start
+  # end_label: end

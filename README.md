@@ -104,6 +104,19 @@ The default microphone policy is configured in
 `ros2_ws/src/fr3_sonopet_bringup/config/microphone.yaml`. It requires a device
 whose name contains `iMM-6C` or `imm6c` unless the config is changed.
 
+The D405 nodes use the namespace/name layout `/RealSense_D405/in_hand` and
+`/RealSense_D405/fixed`. Capture the in-hand D405 intrinsics once while the
+camera is publishing, then use the fixed project CameraInfo topics for downstream
+project code:
+
+```bash
+ros2 launch fr3_sonopet_bringup cameras.launch.py
+ros2 launch fr3_sonopet_bringup capture_d405_intrinsics.launch.py
+```
+
+The capture writes `ros2_ws/src/fr3_sonopet_bringup/intrinsics/d405_intrinsics.yaml`.
+The sensor launch republishes it on `/sonopet/d405_intrinsics/<role>/<stream>/camera_info`.
+
 Continuous RGB topics remain active. Continuous point cloud output is disabled
 by default; the recorder temporarily enables each camera point cloud publisher
 only to save start and end PCD snapshots. Recording artifacts are written under

@@ -10,7 +10,7 @@ If this machine does not have ROS 2 Jazzy yet:
 2. From the repo root, install build tools:
 
 ```bash
-cd ./franka3-sonopet-ros2
+cd path/to/franka3-sonopet-ros2
 ./scripts/bootstrap_ubuntu24_ros_jazzy.sh
 ```
 
@@ -54,12 +54,14 @@ colcon build --symlink-install \
 
 colcon build --symlink-install \
   --cmake-args -DCMAKE_IGNORE_PREFIX_PATH=/usr/local
+
+cd ..
 ```
 
 **Check the build succeeded** (all lines should appear):
 
 ```bash
-source ../scripts/source_ubuntu24_ros_jazzy.sh
+source ./scripts/source_ubuntu24_ros_jazzy.sh
 ros2 pkg list | grep fr3_sonopet
 ```
 
@@ -68,9 +70,10 @@ Expected: `fr3_sonopet_bringup`, `fr3_sonopet_description`, `fr3_sonopet_interfa
 After you change only this project’s Python packages, **a faster rebuild**:
 
 ```bash
-source ./franka3-sonopet-ros2/scripts/source_ubuntu24_ros_jazzy.sh
-cd ./franka3-sonopet-ros2/ros2_ws
+source ./scripts/source_ubuntu24_ros_jazzy.sh
+cd ./ros2_ws
 colcon build --symlink-install --packages-select fr3_sonopet_bringup fr3_sonopet_recording fr3_sonopet_microphone
+cd ..
 ```
 
 `--symlink-install` means Python edits are picked up without rebuilding when you only change `.py` files.
@@ -82,7 +85,6 @@ colcon build --symlink-install --packages-select fr3_sonopet_bringup fr3_sonopet
 You must source **both** system ROS and this overlay. The project script does that for you:
 
 ```bash
-cd ./franka3-sonopet-ros2
 source scripts/source_ubuntu24_ros_jazzy.sh
 ```
 
@@ -172,12 +174,12 @@ rqt_graph
 **Important topics from this project:**
 
 
-| Topic                                        | Type (typical)      | Source                                   |
-| -------------------------------------------- | ------------------- | ---------------------------------------- |
+| Topic                                             | Type (typical)      | Source                                   |
+| ------------------------------------------------- | ------------------- | ---------------------------------------- |
 | `/in_hand_d405/d405_in_hand/color/image_rect_raw` | `sensor_msgs/Image` | In-hand D405                             |
 | `/fixed_d405/d405_fixed/color/image_rect_raw`     | `sensor_msgs/Image` | Fixed D405                               |
-| `/microphone/audio`                          | custom `AudioChunk` | `microphone_node`                        |
-| `/tf`, `/tf_static`                          | TF                  | Robot / description (if Franka launched) |
+| `/microphone/audio`                               | custom `AudioChunk` | `microphone_node`                        |
+| `/tf`, `/tf_static`                               | TF                  | Robot / description (if Franka launched) |
 
 
 **Rates and echo:**

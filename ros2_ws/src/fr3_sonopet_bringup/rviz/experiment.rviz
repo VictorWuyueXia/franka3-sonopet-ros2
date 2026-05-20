@@ -18,7 +18,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /in_hand_d405/d405_in_hand/color/image_rect_raw
+        Value: /RealSense_D405/in_hand/color/image_rect_raw
       Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
@@ -28,7 +28,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /fixed_d405/d405_fixed/color/image_rect_raw
+        Value: /RealSense_D405/fixed/color/image_rect_raw
       Value: true
   Global Options:
     Fixed Frame: fr3_link0

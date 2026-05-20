@@ -1,48 +1,38 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, TextSubstitution
+from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
+CAMERA_NAMESPACE = "RealSense_D405"
+COLOR_PROFILE = "848x480x30"
+DEPTH_PROFILE = "848x480x30"
 
-def _realsense_launch(camera_key: str):
-    # The vendor launch file keeps camera ownership in realsense-ros.
+
+def _realsense_launch(camera_name: str, serial: str) -> IncludeLaunchDescription:
+    # RealSense owns sensor transport; this launch file fixes our experiment naming policy.
     return IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([FindPackageShare("realsense2_camera"), "launch", "rs_launch.py"])
         ),
         launch_arguments={
-            "serial_no": [TextSubstitution(text="_"), LaunchConfiguration(f"{camera_key}_serial")],
-            "camera_namespace": LaunchConfiguration(f"{camera_key}_namespace"),
-            "camera_name": LaunchConfiguration(f"{camera_key}_name"),
-            "initial_reset": LaunchConfiguration("initial_reset"),
-            "rgb_camera.color_profile": LaunchConfiguration("rgb_camera_color_profile"),
-            "depth_module.depth_profile": LaunchConfiguration("depth_module_depth_profile"),
-            "depth_module.power_line_frequency": LaunchConfiguration(
-                "depth_module_power_line_frequency"
-            ),
+            "serial_no": f"_{serial}",
+            "camera_namespace": CAMERA_NAMESPACE,
+            "camera_name": camera_name,
+            "initial_reset": "false",
+            "rgb_camera.color_profile": COLOR_PROFILE,
+            "depth_module.depth_profile": DEPTH_PROFILE,
             "align_depth.enable": "true",
-            "pointcloud.enable": LaunchConfiguration("pointcloud_enable"),
+            "pointcloud.enable": "false",
         }.items(),
     )
 
 
 def generate_launch_description():
-    # Two independent D405 nodes expose stable namespaces for recording and planning.
+    # Both D405 nodes share the device-class namespace and differ only by experiment role.
     return LaunchDescription(
         [
-            DeclareLaunchArgument("in_hand_serial", default_value="323622273258"),
-            DeclareLaunchArgument("in_hand_namespace", default_value="in_hand_d405"),
-            DeclareLaunchArgument("in_hand_name", default_value="d405_in_hand"),
-            DeclareLaunchArgument("fixed_serial", default_value="427622272709"),
-            DeclareLaunchArgument("fixed_namespace", default_value="fixed_d405"),
-            DeclareLaunchArgument("fixed_name", default_value="d405_fixed"),
-            DeclareLaunchArgument("initial_reset", default_value="false"),
-            DeclareLaunchArgument("rgb_camera_color_profile", default_value="848x480x30"),
-            DeclareLaunchArgument("depth_module_depth_profile", default_value="848x480x30"),
-            DeclareLaunchArgument("depth_module_power_line_frequency", default_value="2"),
-            DeclareLaunchArgument("pointcloud_enable", default_value="false"),
-            _realsense_launch("in_hand"),
-            _realsense_launch("fixed"),
+            _realsense_launch("in_hand", "323622273258"),
+            _realsense_launch("fixed", "427622272709"),
         ]
     )

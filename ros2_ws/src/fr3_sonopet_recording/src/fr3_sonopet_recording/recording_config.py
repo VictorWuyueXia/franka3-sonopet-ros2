@@ -18,12 +18,12 @@ class CameraRecordingSpec:
 
 @dataclass(frozen=True)
 class SnapshotConfig:
-    enabled: bool = True
-    timeout_sec: float = 5.0
-    output_format: str = "pcd"
-    start_label: str = "start"
-    end_label: str = "end"
-    require_success: bool = False
+    enabled: bool
+    timeout_sec: float
+    output_format: str
+    start_label: str
+    end_label: str
+    require_success: bool
 
 
 @dataclass(frozen=True)
@@ -58,25 +58,28 @@ def load_recording_config(path: str | Path) -> RecordingConfig:
 
     payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     recording = payload["recording"]
-    video = recording.get("rgb_video", {})
-    audio = recording.get("audio", {})
-    snapshots = recording.get("pointcloud_snapshots", {})
-    cameras = recording.get("cameras", {})
+    video = recording["rgb_video"]
+    audio = recording["audio"]
+    snapshots = recording["pointcloud_snapshots"]
+    cameras = recording["cameras"]
 
     return RecordingConfig(
-        artifact_root=Path(str(recording.get("artifact_root", "artifacts/experiments"))),
-        audio_topic=_require_absolute_topic(str(audio.get("topic", "/microphone/audio"))),
-        audio_directory=str(audio.get("directory", "audio")),
-        video_codec=str(video.get("codec", "MJPG")),
-        video_fps=float(video.get("fps", 30.0)),
-        cameras=tuple(_camera_from_payload(key, value) for key, value in cameras.items()),
+        artifact_root=Path(str(recording["artifact_root"])),
+        audio_topic=_require_absolute_topic(str(audio["topic"])),
+        audio_directory=str(audio["directory"]),
+        video_codec=str(video["codec"]),
+        video_fps=float(video["fps"]),
+        cameras=(
+            _camera_from_payload("in_hand", cameras["in_hand"]),
+            _camera_from_payload("fixed", cameras["fixed"]),
+        ),
         snapshots=SnapshotConfig(
-            enabled=bool(snapshots.get("enabled", True)),
-            timeout_sec=float(snapshots.get("timeout_sec", 5.0)),
-            output_format=str(snapshots.get("output_format", "pcd")),
-            start_label=str(snapshots.get("start_label", "start")),
-            end_label=str(snapshots.get("end_label", "end")),
-            require_success=bool(snapshots.get("require_success", False)),
+            enabled=bool(snapshots["enabled"]),
+            timeout_sec=float(snapshots["timeout_sec"]),
+            output_format=str(snapshots["output_format"]),
+            start_label=str(snapshots["start_label"]),
+            end_label=str(snapshots["end_label"]),
+            require_success=bool(snapshots["require_success"]),
         ),
     )
 
