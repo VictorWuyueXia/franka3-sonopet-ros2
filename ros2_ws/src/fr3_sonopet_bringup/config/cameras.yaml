@@ -6,8 +6,8 @@ cameras:
     parent_frame: fr3_link8
     color_optical_frame: in_hand_color_optical_frame
     depth_optical_frame: in_hand_depth_optical_frame
-    translation_xyz: [-0.090549, -0.101503, 0.118261]
-    quaternion_xyzw: [-0.0567026144623371, -0.106189345068597, 0.91461016748765, 0.386001137349684]
+    translation_xyz: [0.007746960142, -0.135801184373, 0.014861]
+    quaternion_xyzw: [-0.011749712059, -0.119807893418, 0.992711849055, 0.006596208292]
     planning_source: true
   fixed:
     serial: "427622272709"

@@ -12,12 +12,11 @@ from rclpy.time import Time
 from sensor_msgs.msg import PointCloud2, PointField
 from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header
-from tf2_ros import Buffer, TransformException, TransformListener
+from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
 from fr3_sonopet_trajectory.raster_pattern import RasterSpec
 from fr3_sonopet_trajectory.raster_plan_builder import RasterBuild, build_raster_from_cloud
-from fr3_sonopet_trajectory.surface_geometry import quaternion_xyzw_from_axes
 
 
 class RasterPlannerNode(Node):
@@ -54,8 +53,6 @@ class RasterPlannerNode(Node):
         )
 
         self._planning_cloud_points: np.ndarray | None = None
-        self._planning_cloud_frame = ""
-        self._cloud_capture_warning_logged = False
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -99,27 +96,20 @@ class RasterPlannerNode(Node):
         if self._planning_cloud_points is not None:
             return
 
-        try:
-            cloud_frame = cloud_msg.header.frame_id
-            if not cloud_frame:
-                raise RuntimeError("Initial point cloud does not carry a frame_id")
-            xyz, rgb = _pointcloud2_xyz_rgb_arrays(cloud_msg)
-            keep_indices = _planning_cloud_indices(
-                xyz, self._cloud_max_distance_m, self._cloud_trim_fraction
-            )
-            filtered_xyz = xyz[keep_indices]
-            filtered_rgb = rgb[keep_indices] if rgb is not None else None
-            target_from_cloud = self._lookup_matrix(self._target_frame, cloud_frame)
-            target_xyz = _transform_points(filtered_xyz, target_from_cloud)
-        except (RuntimeError, TransformException, ValueError) as exc:
-            if not self._cloud_capture_warning_logged:
-                self.get_logger().warning(f"Planning cloud capture pending: {exc}")
-                self._cloud_capture_warning_logged = True
-            return
+        cloud_frame = cloud_msg.header.frame_id
+        if not cloud_frame:
+            raise RuntimeError("Initial point cloud does not carry a frame_id")
+        xyz, rgb = _pointcloud2_xyz_rgb_arrays(cloud_msg)
+        keep_indices = _planning_cloud_indices(
+            xyz, self._cloud_max_distance_m, self._cloud_trim_fraction
+        )
+        filtered_xyz = xyz[keep_indices]
+        filtered_rgb = rgb[keep_indices] if rgb is not None else None
+        target_from_cloud = self._lookup_matrix(self._target_frame, cloud_frame)
+        target_xyz = _transform_points(filtered_xyz, target_from_cloud)
 
-        # Freeze the startup cloud in its camera frame for fitting, and publish a target-frame copy.
-        self._planning_cloud_points = filtered_xyz
-        self._planning_cloud_frame = cloud_frame
+        # Freeze the startup cloud directly in the robot base frame used for raster geometry.
+        self._planning_cloud_points = target_xyz
         self._display_cloud_pub.publish(
             _make_pointcloud2(
                 target_xyz,
@@ -136,15 +126,12 @@ class RasterPlannerNode(Node):
 
     def _on_clicked_point(self, point_msg: PointStamped) -> None:
         # RViz point publication is the operator-facing trigger for immediate planning.
-        try:
-            selected_cloud = self._transform_point(
-                _point_to_array(point_msg.point),
-                point_msg.header.frame_id,
-                self._require_cloud_frame(),
-            )
-            self._build_publish_plan(selected_cloud)
-        except (RuntimeError, TransformException, ValueError) as exc:
-            self.get_logger().error(f"Raster plan rejected: {exc}")
+        selected_base = self._transform_point(
+            _point_to_array(point_msg.point),
+            point_msg.header.frame_id,
+            self._target_frame,
+        )
+        self._build_publish_plan(selected_base)
 
     def _execute_build_plan(self, goal_handle):
         # The action path keeps scripted planning available with target-frame centers.
@@ -153,39 +140,23 @@ class RasterPlannerNode(Node):
         goal_handle.publish_feedback(feedback)
 
         result = BuildRasterPlan.Result()
-        try:
-            selected_target = _point_to_array(goal_handle.request.selected_center)
-            selected_cloud = self._transform_point(
-                selected_target,
-                self._target_frame,
-                self._require_cloud_frame(),
-            )
-            plan = self._build_publish_plan(selected_cloud)
-        except (RuntimeError, TransformException, ValueError) as exc:
-            goal_handle.abort()
-            result.success = False
-            result.message = str(exc)
-            result.plan = RasterPlan()
-            return result
-
+        selected_target = _point_to_array(goal_handle.request.selected_center)
+        plan = self._build_publish_plan(selected_target)
         goal_handle.succeed()
         result.success = True
         result.message = f"Published {len(plan.poses.poses)} raster poses."
         result.plan = plan
         return result
 
-    def _build_publish_plan(self, selected_cloud: np.ndarray) -> RasterPlan:
-        # Geometry is computed in the cloud frame, then transformed to the robot base frame.
+    def _build_publish_plan(self, selected_base: np.ndarray) -> RasterPlan:
+        # Geometry is computed and emitted in the robot base frame.
         cloud_points = self._require_cloud_points()
-        cloud_frame = self._require_cloud_frame()
-        cloud_build = build_raster_from_cloud(
+        target_build = build_raster_from_cloud(
             cloud_points,
-            selected_cloud,
+            selected_base,
             self._spec,
             pre_filtered=True,
         )
-        target_from_cloud = self._lookup_matrix(self._target_frame, cloud_frame)
-        target_build = self._transform_build_to_target(cloud_build, target_from_cloud)
 
         header = Header()
         header.stamp = self.get_clock().now().to_msg()
@@ -202,11 +173,6 @@ class RasterPlannerNode(Node):
             raise RuntimeError(f"No planning cloud has been captured from {self._cloud_topic}")
         return self._planning_cloud_points
 
-    def _require_cloud_frame(self) -> str:
-        if not self._planning_cloud_frame:
-            raise RuntimeError("Planning cloud does not carry a frame_id")
-        return self._planning_cloud_frame
-
     def _lookup_matrix(self, target_frame: str, source_frame: str) -> np.ndarray:
         if target_frame == source_frame:
             return np.eye(4, dtype=np.float64)
@@ -221,33 +187,6 @@ class RasterPlannerNode(Node):
     ) -> np.ndarray:
         matrix = self._lookup_matrix(target_frame, source_frame)
         return _transform_points(point[None, :], matrix)[0]
-
-    def _transform_build_to_target(self, build: RasterBuild, matrix: np.ndarray) -> RasterBuild:
-        # Positions receive full SE(3) transforms; axes and normals receive rotation only.
-        rotation = matrix[:3, :3]
-        center = _transform_points(build.center[None, :], matrix)[0]
-        points = _transform_points(build.points, matrix)
-        normals = build.normals @ rotation.T
-        tangent = rotation @ build.frame.tangent
-        bitangent = rotation @ build.frame.bitangent
-        normal = rotation @ build.frame.normal
-        quaternion = quaternion_xyzw_from_axes(tangent, normal)
-        quaternions = np.repeat(quaternion[None, :], points.shape[0], axis=0)
-        frame = type(build.frame)(
-            center=center,
-            tangent=tangent,
-            bitangent=bitangent,
-            normal=normal,
-        )
-        return RasterBuild(
-            center=center,
-            points=points,
-            normals=normals,
-            quaternions_xyzw=quaternions,
-            frame=frame,
-            segment_names=build.segment_names,
-            config_hash=build.config_hash,
-        )
 
     def _make_plan(self, header: Header, build: RasterBuild) -> RasterPlan:
         # RasterPlan remains the machine-readable contract consumed by motion nodes.
@@ -275,43 +214,15 @@ class RasterPlannerNode(Node):
         return plan
 
     def _make_markers(self, header: Header, build: RasterBuild) -> MarkerArray:
-        # Marker geometry gives the operator a direct visual check of path and surface normal.
-        path = _base_marker(header, marker_id=0, marker_type=Marker.LINE_STRIP)
-        path.ns = "raster_path"
-        path.scale.x = 0.001
+        # RViz stays sparse: only executable waypoints are shown.
+        path = _base_marker(header, marker_id=0, marker_type=Marker.POINTS)
+        path.ns = "raster_waypoints"
+        path.scale.x = 0.0005
+        path.scale.y = 0.0005
         path.color.g = 1.0
         path.color.a = 1.0
         path.points = [_array_to_point(point) for point in build.points]
-
-        half_side = self._spec.square_side_m / 2.0
-        corners = np.array(
-            [
-                build.center - half_side * build.frame.tangent - half_side * build.frame.bitangent,
-                build.center + half_side * build.frame.tangent - half_side * build.frame.bitangent,
-                build.center + half_side * build.frame.tangent + half_side * build.frame.bitangent,
-                build.center - half_side * build.frame.tangent + half_side * build.frame.bitangent,
-                build.center - half_side * build.frame.tangent - half_side * build.frame.bitangent,
-            ],
-            dtype=np.float64,
-        )
-        patch = _base_marker(header, marker_id=1, marker_type=Marker.LINE_STRIP)
-        patch.ns = "raster_patch"
-        patch.scale.x = 0.0015
-        patch.color.r = 1.0
-        patch.color.g = 0.6
-        patch.color.a = 1.0
-        patch.points = [_array_to_point(corner) for corner in corners]
-
-        normal = _base_marker(header, marker_id=2, marker_type=Marker.LINE_LIST)
-        normal.ns = "raster_normal"
-        normal.scale.x = 0.002
-        normal.color.b = 1.0
-        normal.color.a = 1.0
-        normal.points = [
-            _array_to_point(build.center),
-            _array_to_point(build.center + self._spec.square_side_m * build.frame.normal),
-        ]
-        return MarkerArray(markers=[path, patch, normal])
+        return MarkerArray(markers=[path])
 
 
 def _pointcloud2_xyz_rgb_arrays(
@@ -456,8 +367,6 @@ def _base_marker(header: Header, marker_id: int, marker_type: int) -> Marker:
 def main() -> None:
     rclpy.init()
     node = RasterPlannerNode()
-    try:
-        rclpy.spin(node)
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()

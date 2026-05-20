@@ -58,7 +58,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /sonopet/planning_cloud
     - Class: rviz_default_plugins/PoseArray
-      Enabled: true
+      Enabled: false
       Name: Raster Poses
       Topic:
         Depth: 5

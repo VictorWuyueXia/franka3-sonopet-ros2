@@ -53,34 +53,57 @@ def stabilize_axis(axis: np.ndarray, reference: np.ndarray) -> np.ndarray:
 def fit_surface_frame(
     patch_points: np.ndarray,
     center_xyz: np.ndarray,
-    camera_origin_xyz: np.ndarray,
 ) -> SurfaceFrame:
-    """Fit the local tangent plane and orient its normal toward the camera."""
+    """Fit a base-frame tangent square with normal stabilized against +Z."""
     points = np.asarray(patch_points, dtype=np.float64)
     center = np.asarray(center_xyz, dtype=np.float64)
-    camera_origin = np.asarray(camera_origin_xyz, dtype=np.float64)
     if points.ndim != 2 or points.shape[1] != 3:
         raise ValueError("Patch points must be an N x 3 matrix")
     if points.shape[0] < 3:
         raise ValueError("At least three patch points are required for PCA")
 
-    # PCA gives the minimum-variance surface normal and maximum-variance raster tangent.
+    # PCA gives the local surface normal; base +X fixes the raster line direction.
     demeaned = points - points.mean(axis=0)
     covariance = demeaned.T @ demeaned / points.shape[0]
     eigenvalues, eigenvectors = np.linalg.eigh(covariance)
     order = np.argsort(eigenvalues)
     normal = eigenvectors[:, order[0]]
-    tangent = eigenvectors[:, order[-1]]
-
-    # The surface normal must face the D405 optical origin for RViz and TCP consistency.
-    normal = stabilize_axis(normal, camera_origin - center)
-
-    # Tangent sign is anchored to the cloud-frame x-axis for repeatable raster ordering.
+    normal = stabilize_axis(normal, np.array([0.0, 0.0, 1.0], dtype=np.float64))
     tangent_reference = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-    tangent = stabilize_axis(tangent, tangent_reference)
+    tangent = normalize_array(tangent_reference - float(np.dot(tangent_reference, normal)) * normal)
     bitangent = normalize_array(np.cross(normal, tangent))
     tangent = normalize_array(np.cross(bitangent, normal))
     return SurfaceFrame(center=center, tangent=tangent, bitangent=bitangent, normal=normal)
+
+
+def estimate_local_normals(
+    cloud_points: np.ndarray,
+    query_points: np.ndarray,
+    search_radius_m: float,
+) -> np.ndarray:
+    """Estimate base-frame PCA normals at reference surface points."""
+    points = np.asarray(cloud_points, dtype=np.float64)
+    queries = np.asarray(query_points, dtype=np.float64)
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("Cloud points must be an N x 3 matrix")
+    if queries.ndim != 2 or queries.shape[1] != 3:
+        raise ValueError("Query points must be an N x 3 matrix")
+    if search_radius_m <= 0.0:
+        raise ValueError("search_radius_m must be positive")
+
+    normals: list[np.ndarray] = []
+    radius_sq = search_radius_m * search_radius_m
+    reference = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    for query in queries:
+        deltas = points - query
+        nearby = points[np.einsum("ij,ij->i", deltas, deltas) <= radius_sq]
+        if nearby.shape[0] < 3:
+            raise ValueError("Local normal estimation needs at least three neighboring points")
+        demeaned = nearby - nearby.mean(axis=0)
+        covariance = demeaned.T @ demeaned / nearby.shape[0]
+        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+        normals.append(stabilize_axis(eigenvectors[:, int(np.argmin(eigenvalues))], reference))
+    return np.asarray(normals, dtype=np.float64)
 
 
 def quaternion_xyzw_from_axes(tangent: np.ndarray, normal: np.ndarray) -> np.ndarray:

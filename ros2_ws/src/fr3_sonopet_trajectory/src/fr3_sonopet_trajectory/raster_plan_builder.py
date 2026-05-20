@@ -6,11 +6,11 @@ from dataclasses import dataclass
 import numpy as np
 
 from fr3_sonopet_trajectory.cloud_io import crop_local_patch, filter_planning_cloud
-from fr3_sonopet_trajectory.raster_pattern import RasterSpec, build_raster_uv
+from fr3_sonopet_trajectory.raster_pattern import RasterSpec, build_surface_raster
 from fr3_sonopet_trajectory.surface_geometry import (
     SurfaceFrame,
+    estimate_local_normals,
     fit_surface_frame,
-    quaternion_xyzw_from_axes,
 )
 
 
@@ -27,37 +27,33 @@ class RasterBuild:
 
 def build_raster_from_cloud(
     cloud_points: np.ndarray,
-    selected_center_cloud: np.ndarray,
+    selected_center_base: np.ndarray,
     spec: RasterSpec,
     *,
     pre_filtered: bool = False,
 ) -> RasterBuild:
-    """Build a Cartesian raster patch from a selected in-hand D405 cloud point."""
+    """Build a base-frame Cartesian raster patch from a selected D405 cloud point."""
     planning_points = cloud_points if pre_filtered else filter_planning_cloud(cloud_points)
-    patch_points = crop_local_patch(planning_points, selected_center_cloud, spec.square_side_m)
-    frame = fit_surface_frame(
-        patch_points,
-        selected_center_cloud,
-        camera_origin_xyz=np.zeros(3, dtype=np.float64),
-    )
+    patch_points = crop_local_patch(planning_points, selected_center_base, spec.square_side_m)
+    frame = fit_surface_frame(patch_points, selected_center_base)
 
-    # The UV raster is lifted into the PCA tangent frame without changing surface height.
-    uv = build_raster_uv(spec)
-    points = (
-        frame.center[None, :]
-        + uv[:, 0, None] * frame.tangent[None, :]
-        + uv[:, 1, None] * frame.bitangent[None, :]
+    # Raster points follow interpolated surface height; normals remain reference metadata.
+    raster = build_surface_raster(patch_points, frame, spec)
+    normals = estimate_local_normals(
+        patch_points,
+        raster.normal_reference_points,
+        search_radius_m=spec.square_side_m,
     )
-    normals = np.repeat(frame.normal[None, :], points.shape[0], axis=0)
-    quaternion = quaternion_xyzw_from_axes(frame.tangent, frame.normal)
-    quaternions = np.repeat(quaternion[None, :], points.shape[0], axis=0)
+    # Motion planning owns EE attitude; trajectory poses carry positions and reference normals.
+    quaternion = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+    quaternions = np.repeat(quaternion[None, :], raster.points.shape[0], axis=0)
     return RasterBuild(
         center=frame.center,
-        points=points,
+        points=raster.points,
         normals=normals,
         quaternions_xyzw=quaternions,
         frame=frame,
-        segment_names=["raster"] * points.shape[0],
+        segment_names=raster.segment_names,
         config_hash=config_hash(spec),
     )
 

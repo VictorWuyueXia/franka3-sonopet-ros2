@@ -112,30 +112,6 @@ If packages are missing, you forgot to source or the build failed.
 ## 4. What to launch
 
 This project exposes three launch entry points. Always `source scripts/source_ubuntu24_ros_jazzy.sh` first.
-<!-- | Mode | Command | Hardware |
-| ---- | ------- | -------- |
-| **Real arm** (headless stack) | `ros2 launch fr3_sonopet_bringup experiment.launch.py` | Franka FR3, 2× D405, iMM-6C mic |
-| **Fake arm** (no hardware) | `ros2 launch fr3_sonopet_bringup fake_experiment.launch.py` | None — fake Franka + motion/supervisor only |
-| **Full boot** (sensors + raster + RViz) | `ros2 launch fr3_sonopet_bringup experiment.launch.py rviz:=true` | Same as real arm | -->
-
-
-### Real arm
-
-```bash
-source scripts/source_ubuntu24_ros_jazzy.sh
-ros2 launch fr3_sonopet_bringup experiment.launch.py
-```
-
-Starts Franka control, tool TF, both D405s, microphone, recording node, raster planner, motion runner, and experiment supervisor. Continuous point clouds stay off; the recorder still snapshots PCDs at recording start/stop.
-
-### Fake arm
-
-```bash
-source scripts/source_ubuntu24_ros_jazzy.sh
-ros2 launch fr3_sonopet_bringup fake_experiment.launch.py
-```
-
-Same planning/motion/supervisor graph with `use_fake_hardware:=true` and `fake_execution` / `fake_run` enabled. No cameras, mic, recorder, or raster capture — use this to exercise TF and motion without the bench hardware.
 
 ### Full boot (sensors + raster + RViz)
 
@@ -151,6 +127,26 @@ Everything in **Real arm**, plus:
 - Live RGB panels and raster overlays after you pick a surface point (section 6)
 
 **Config files:** camera serials in `config/cameras.yaml`; raster crop/trim in `config/raster.yaml`. Default mic config requires a device name containing `iMM-6C` or `imm6c` (`config/microphone.yaml`).
+
+
+
+<!-- ### Real arm
+
+```bash
+source scripts/source_ubuntu24_ros_jazzy.sh
+ros2 launch fr3_sonopet_bringup experiment.launch.py
+```
+
+Starts Franka control, tool TF, both D405s, microphone, recording node, raster planner, motion runner, and experiment supervisor. Continuous point clouds stay off; the recorder still snapshots PCDs at recording start/stop. -->
+
+### Fake arm
+
+```bash
+source scripts/source_ubuntu24_ros_jazzy.sh
+ros2 launch fr3_sonopet_bringup fake_experiment.launch.py
+```
+
+Same planning/motion/supervisor graph with `use_fake_hardware:=true` and `fake_execution` / `fake_run` enabled. No cameras, mic, recorder, or raster capture — use this to exercise TF and motion without the bench hardware.
 
 ---
 
@@ -173,17 +169,17 @@ rqt_graph
 **Important topics from this project:**
 
 
-| Topic                                              | Type (typical)           | Source                                      |
-| -------------------------------------------------- | ------------------------ | ------------------------------------------- |
-| `/RealSense_D405/in_hand/color/image_rect_raw`     | `sensor_msgs/Image`      | In-hand D405                                |
-| `/RealSense_D405/fixed/color/image_rect_raw`       | `sensor_msgs/Image`      | Fixed D405                                  |
-| `/RealSense_D405/in_hand/depth/color/points`       | `sensor_msgs/PointCloud2`| In-hand D405 (only when point cloud enabled)|
-| `/sonopet/planning_cloud`                          | `sensor_msgs/PointCloud2`| `raster_planner_node` (frozen, `fr3_link0`)   |
-| `/clicked_point`                                   | `geometry_msgs/PointStamped` | RViz **Publish Point** tool            |
-| `/sonopet/raster_plan/poses`                       | `geometry_msgs/PoseArray`| `raster_planner_node` after a pick          |
-| `/sonopet/raster_plan/markers`                     | `visualization_msgs/MarkerArray` | Raster path/patch/normal preview   |
-| `/microphone/audio`                                | custom `AudioChunk`      | `microphone_node`                           |
-| `/tf`, `/tf_static`                                | TF                       | Robot / cameras / tool frames               |
+| Topic                                          | Type (typical)                   | Source                                       |
+| ---------------------------------------------- | -------------------------------- | -------------------------------------------- |
+| `/RealSense_D405/in_hand/color/image_rect_raw` | `sensor_msgs/Image`              | In-hand D405                                 |
+| `/RealSense_D405/fixed/color/image_rect_raw`   | `sensor_msgs/Image`              | Fixed D405                                   |
+| `/RealSense_D405/in_hand/depth/color/points`   | `sensor_msgs/PointCloud2`        | In-hand D405 (only when point cloud enabled) |
+| `/sonopet/planning_cloud`                      | `sensor_msgs/PointCloud2`        | `raster_planner_node` (frozen, `fr3_link0`)  |
+| `/clicked_point`                               | `geometry_msgs/PointStamped`     | RViz **Publish Point** tool                  |
+| `/sonopet/raster_plan/poses`                   | `geometry_msgs/PoseArray`        | `raster_planner_node` after a pick           |
+| `/sonopet/raster_plan/markers`                 | `visualization_msgs/MarkerArray` | Raster path/patch/normal preview             |
+| `/microphone/audio`                            | custom `AudioChunk`              | `microphone_node`                            |
+| `/tf`, `/tf_static`                            | TF                               | Robot / cameras / tool frames                |
 
 
 **Rates and echo:**
@@ -217,14 +213,16 @@ ros2 launch fr3_sonopet_bringup experiment.launch.py rviz:=true
 
 Config file: `fr3_sonopet_bringup/rviz/experiment.rviz` (Fixed Frame `fr3_link0`).
 
-| Display              | Topic                               | Notes |
-| -------------------- | ----------------------------------- | ----- |
-| TF                   | —                                   | Robot, `sonopet_tcp`, camera mounts |
-| Planning PointCloud  | `/sonopet/planning_cloud`           | **Frozen** startup cloud in `fr3_link0` |
-| Raster Poses         | `/sonopet/raster_plan/poses`        | After a surface pick |
-| Raster Markers       | `/sonopet/raster_plan/markers`      | Path, patch square, surface normal |
-| In Hand RGB          | `/RealSense_D405/in_hand/color/image_rect_raw` | Live |
-| Fixed RGB            | `/RealSense_D405/fixed/color/image_rect_raw`   | Live |
+
+| Display             | Topic                                          | Notes                                   |
+| ------------------- | ---------------------------------------------- | --------------------------------------- |
+| TF                  | —                                              | Robot, `sonopet_tcp`, camera mounts     |
+| Planning PointCloud | `/sonopet/planning_cloud`                      | **Frozen** startup cloud in `fr3_link0` |
+| Raster Poses        | `/sonopet/raster_plan/poses`                   | After a surface pick                    |
+| Raster Markers      | `/sonopet/raster_plan/markers`                 | Path, patch square, surface normal      |
+| In Hand RGB         | `/RealSense_D405/in_hand/color/image_rect_raw` | Live                                    |
+| Fixed RGB           | `/RealSense_D405/fixed/color/image_rect_raw`   | Live                                    |
+
 
 ### Planning cloud (shown once)
 
@@ -302,10 +300,10 @@ For arm-only checks without sensors, use **Fake arm** (section 4) in terminal 1 
 
 ## 9. Common pitfalls
 
-1. `**ros2: command not found**` — source `scripts/source_ubuntu24_ros_jazzy.sh` (or `/opt/ros/jazzy/setup.bash`).
+1. `**ros2: command not found`** — source `scripts/source_ubuntu24_ros_jazzy.sh` (or `/opt/ros/jazzy/setup.bash`).
 2. `**Package 'fr3_sonopet_bringup' not found**` — build with `colcon build` and source again.
 3. `**franka_hardware` compile error (`getTargetFeedback`, headers under `/usr/local/include/franka`)** — source `scripts/source_ubuntu24_ros_jazzy.sh` before building and add `-DCMAKE_IGNORE_PREFIX_PATH=/usr/local` to every `colcon build` (see section 2).
-4. **`mobile_fr3_duo_trajectory_controller` CMake/symlink install error** — add `--packages-skip mobile_fr3_duo_trajectory_controller` to every full-workspace `colcon build` (section 2). If `fr3_sonopet_bringup` still built, the Sonopet stack is usable.
+4. `**mobile_fr3_duo_trajectory_controller` CMake/symlink install error** — add `--packages-skip mobile_fr3_duo_trajectory_controller` to every full-workspace `colcon build` (section 2). If `fr3_sonopet_bringup` still built, the Sonopet stack is usable.
 5. **Terminal closes right after `colcon build` finishes** — treat as success when `ros2 pkg list | grep fr3_sonopet` lists all nine project packages; re-source and continue.
 6. `**not found: ".../local_setup.bash"` when sourcing** — leftover from an interrupted build. Either finish a successful build or run `rm -rf ros2_ws/build ros2_ws/install ros2_ws/log` and rebuild from section 2.
 7. **Launch fails on `realsense2_camera` or core `franka_*`** — run `vcs import` and the section 2 `colcon build` sequence. For RealSense `API version mismatch`, install `ros-jazzy-librealsense2` and rebuild `realsense2_camera`.
