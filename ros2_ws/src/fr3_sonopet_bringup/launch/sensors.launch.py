@@ -16,6 +16,18 @@ def _include_launch(filename: str) -> IncludeLaunchDescription:
     )
 
 
+def _include_cameras() -> IncludeLaunchDescription:
+    # Continuous point clouds stay opt-in for sensor-only recording workflows.
+    return IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution(
+                [FindPackageShare("fr3_sonopet_bringup"), "launch", "cameras.launch.py"]
+            )
+        ),
+        launch_arguments={"pointcloud_enable": LaunchConfiguration("pointcloud_enable")}.items(),
+    )
+
+
 def generate_launch_description():
     rviz_config = PathJoinSubstitution(
         [FindPackageShare("fr3_sonopet_bringup"), "rviz", "experiment.rviz"]
@@ -23,7 +35,8 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("rviz", default_value="false"),
-            _include_launch("cameras.launch.py"),
+            DeclareLaunchArgument("pointcloud_enable", default_value="false"),
+            _include_cameras(),
             _include_launch("d405_intrinsics.launch.py"),
             _include_launch("microphone.launch.py"),
             _include_launch("recording.launch.py"),

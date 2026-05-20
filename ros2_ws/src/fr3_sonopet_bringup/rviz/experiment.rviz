@@ -7,9 +7,74 @@ Visualization Manager:
     - Class: rviz_default_plugins/Grid
       Enabled: true
       Name: Grid
+    - Class: rviz_default_plugins/RobotModel
+      Enabled: true
+      Name: Franka Robot
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+    - Class: rviz_default_plugins/RobotModel
+      Enabled: true
+      Name: Sonopet Tool
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /sonopet/robot_description
     - Class: rviz_default_plugins/TF
       Enabled: true
       Name: TF
+      Marker Scale: 0.2
+      Show Names: true
+      Show Axes: true
+      Show Arrows: false
+      Update Interval: 0
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        fr3_link0:
+          Value: true
+        fr3_hand_tcp:
+          Value: true
+        sonopet_tcp:
+          Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: Planning PointCloud
+      Color Transformer: RGB8
+      Channel Name: rgb
+      Style: Points
+      Size (Pixels): 3
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /sonopet/planning_cloud
+    - Class: rviz_default_plugins/PoseArray
+      Enabled: true
+      Name: Raster Poses
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /sonopet/raster_plan/poses
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Raster Markers
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /sonopet/raster_plan/markers
     - Class: rviz_default_plugins/Image
       Enabled: true
       Name: In Hand RGB
@@ -32,3 +97,10 @@ Visualization Manager:
       Value: true
   Global Options:
     Fixed Frame: fr3_link0
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/PublishPoint
+      Topic:
+        Value: /clicked_point

@@ -22,14 +22,25 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     package_root = Path(__file__).resolve().parents[1]
     cameras = (package_root / "config" / "cameras.yaml").read_text(encoding="utf-8")
     recording = (package_root / "config" / "recording_topics.yaml").read_text(encoding="utf-8")
+    raster = (package_root / "config" / "raster.yaml").read_text(encoding="utf-8")
     microphone = (package_root / "config" / "microphone.yaml").read_text(encoding="utf-8")
 
     assert not any(line.lstrip().startswith("#") for line in cameras.splitlines())
     assert not any(line.lstrip().startswith("#") for line in recording.splitlines())
+    assert not any(line.lstrip().startswith("#") for line in raster.splitlines())
     assert "rgb_camera_profile: 848x480x30" in cameras
+    assert "translation_xyz:" in cameras
+    assert "quaternion_xyzw:" in cameras
+    assert "parent_frame: fr3_link8" in cameras
+    assert "parent_frame: fr3_link0" in cameras
+    assert "color_optical_frame:" in cameras
+    assert "depth_optical_frame:" in cameras
     assert "pointcloud_snapshots:" in cameras
     assert "/RealSense_D405/in_hand/color/image_rect_raw" in recording
     assert "/RealSense_D405/fixed/color/image_rect_raw" in recording
+    assert "planning_cloud_topic: /RealSense_D405/in_hand/depth/color/points" in raster
+    assert "planning_cloud_display_topic: /sonopet/planning_cloud" in raster
+    assert "clicked_point_topic: /clicked_point" in raster
     assert "/microphone/audio" in recording
     assert "ros__parameters:" in microphone
     assert "iMM-6C" in microphone
@@ -40,16 +51,51 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
 def test_launch_files_use_sensor_only_recording_defaults():
     package_root = Path(__file__).resolve().parents[1]
     cameras_launch = (package_root / "launch" / "cameras.launch.py").read_text(encoding="utf-8")
+    franka_launch = (package_root / "launch" / "franka.launch.py").read_text(encoding="utf-8")
+    experiment_launch = (package_root / "launch" / "experiment.launch.py").read_text(
+        encoding="utf-8"
+    )
     recording_launch = (package_root / "launch" / "recording.launch.py").read_text(encoding="utf-8")
     microphone_launch = (package_root / "launch" / "microphone.launch.py").read_text(
         encoding="utf-8"
     )
+    rviz = (package_root / "rviz" / "experiment.rviz").read_text(encoding="utf-8")
 
     assert "cameras.yaml" in cameras_launch
-    assert '"camera_namespace": camera["namespace"]' in cameras_launch
-    assert '"camera_name": camera["camera_name"]' in cameras_launch
-    assert '"pointcloud.enable": "false"' in cameras_launch
-    assert "LaunchConfiguration" not in cameras_launch
+    assert "camera['namespace']" in cameras_launch or 'camera["namespace"]' in cameras_launch
+    assert "camera['camera_name']" in cameras_launch or 'camera["camera_name"]' in cameras_launch
+    assert 'DeclareLaunchArgument("pointcloud_enable", default_value="false")' in cameras_launch
+    assert '"pointcloud.enable": pointcloud_enable' in cameras_launch
+    assert 'LaunchConfiguration("pointcloud_enable")' in cameras_launch
+    assert "static_transform_publisher" in cameras_launch
+    assert "translation_xyz" in cameras_launch
+    assert "quaternion_xyzw" in cameras_launch
+    assert '"publish_tf": "false"' in cameras_launch
+    assert '"pointcloud.stream_filter"' in cameras_launch
+    assert '"enable_color": "true"' in cameras_launch
+    assert "raster.yaml" in experiment_launch
+    assert '" hand:=false"' in franka_launch
+    assert '" ee_id:=none"' in franka_launch
+    assert "franka_gripper" not in franka_launch
+    assert "load_gripper" not in franka_launch
+    assert 'remappings=[("joint_states", "franka/joint_states")]' not in franka_launch
+    assert 'moveit_controller_config["controller_names"] = ["fr3_arm_controller"]' in franka_launch
+    assert '"joints": FR3_ARM_JOINTS' in franka_launch
+    assert '"interfaces": ["position", "velocity", "effort"]' in franka_launch
+    assert "joint_state_publisher" not in franka_launch
+    pointcloud_arg = 'launch_arguments={"pointcloud_enable": LaunchConfiguration("rviz")}'
+    assert pointcloud_arg in experiment_launch
+    assert "parameters=[_raster_config()]" in experiment_launch
+    assert "/sonopet/planning_cloud" in rviz
+    assert "Transient Local" in rviz
+    assert "/sonopet/raster_plan/poses" in rviz
+    assert "/sonopet/raster_plan/markers" in rviz
+    assert "rviz_default_plugins/PublishPoint" in rviz
+    assert "rviz_default_plugins/RobotModel" in rviz
+    assert "/robot_description" in rviz
+    assert "/sonopet/robot_description" in rviz
+    assert "All Enabled: false" in rviz
+    assert "Color Transformer: RGB8" in rviz
     assert "recording_topics.yaml" in recording_launch
     assert "cameras.yaml" in recording_launch
     assert "microphone.yaml" in microphone_launch

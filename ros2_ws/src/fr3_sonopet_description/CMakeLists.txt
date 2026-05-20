@@ -3,7 +3,7 @@ project(fr3_sonopet_description)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch urdf
+install(DIRECTORY launch meshes config
   DESTINATION share/${PROJECT_NAME}
 )
 

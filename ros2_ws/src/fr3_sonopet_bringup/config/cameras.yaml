@@ -3,15 +3,21 @@ cameras:
     serial: "323622273258"
     namespace: RealSense_D405
     camera_name: in_hand
-    parent_frame: sonopet_tcp
-    optical_frame: in_hand_color_optical_frame
+    parent_frame: fr3_link8
+    color_optical_frame: in_hand_color_optical_frame
+    depth_optical_frame: in_hand_depth_optical_frame
+    translation_xyz: [-0.090549, -0.101503, 0.118261]
+    quaternion_xyzw: [-0.0567026144623371, -0.106189345068597, 0.91461016748765, 0.386001137349684]
     planning_source: true
   fixed:
     serial: "427622272709"
     namespace: RealSense_D405
     camera_name: fixed
     parent_frame: fr3_link0
-    optical_frame: fixed_color_optical_frame
+    color_optical_frame: fixed_color_optical_frame
+    depth_optical_frame: fixed_depth_optical_frame
+    translation_xyz: [0.448819, 0.28769, 0.303049]
+    quaternion_xyzw: [-0.36791, 0.848564, -0.377844, -0.0426032]
     planning_source: false
 
 realsense:

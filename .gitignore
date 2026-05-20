@@ -48,3 +48,8 @@ artifacts/
 # Local macOS light-development helpers; Ubuntu ROS setup is the shared path.
 scripts/*macos*.sh
 environment.yml
+
+# Cursor and VSCode local development helpers
+.cursor/
+.vscode/
+.codex/

@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import yaml
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -13,6 +17,11 @@ def _description_include(name: str):
             PathJoinSubstitution([FindPackageShare("fr3_sonopet_description"), "launch", name])
         )
     )
+
+
+def _raster_config():
+    path = Path(get_package_share_directory("fr3_sonopet_bringup")) / "config" / "raster.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))["raster"]
 
 
 def generate_launch_description():
@@ -35,7 +44,7 @@ def generate_launch_description():
                 executable="raster_planner_node",
                 name="raster_planner_node",
                 output="screen",
-                parameters=[{"use_fixture_cloud": True}],
+                parameters=[_raster_config()],
             ),
             Node(
                 package="fr3_sonopet_motion",
