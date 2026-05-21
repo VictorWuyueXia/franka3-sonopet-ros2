@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -50,10 +50,9 @@ def generate_launch_description():
     rviz_config = PathJoinSubstitution(
         [FindPackageShare("fr3_sonopet_bringup"), "rviz", "experiment.rviz"]
     )
-    return LaunchDescription(
-        [
-            DeclareLaunchArgument("rviz", default_value="false"),
-            _include("franka.launch.py"),
+    sensor_stack = TimerAction(
+        period=5.0,
+        actions=[
             _description_include("sonopet_tcp.launch.py"),
             _include_cameras(),
             _include("microphone.launch.py"),
@@ -85,5 +84,12 @@ def generate_launch_description():
                 condition=IfCondition(LaunchConfiguration("rviz")),
                 output="screen",
             ),
+        ],
+    )
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument("rviz", default_value="false"),
+            _include("franka.launch.py"),
+            sensor_stack,
         ]
     )

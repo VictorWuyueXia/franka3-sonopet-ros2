@@ -84,7 +84,7 @@ pytest \
   ros2_ws/src/fr3_sonopet_bringup/test \
   ros2_ws/src/fr3_sonopet_microphone/test \
   ros2_ws/src/fr3_sonopet_supervisor/test/test_operator_gates.py \
-  ros2_ws/src/fr3_sonopet_motion/test/test_segment_policy.py \
+  ros2_ws/src/fr3_sonopet_motion/test/test_motion_runner_node.py \
   ros2_ws/src/fr3_sonopet_recording/test \
   ros2_ws/src/fr3_sonopet_trajectory/test/test_raster_pattern.py \
   ros2_ws/src/fr3_sonopet_trajectory/test/test_surface_geometry.py

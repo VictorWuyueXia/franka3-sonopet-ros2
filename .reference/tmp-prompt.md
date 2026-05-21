@@ -113,3 +113,25 @@ add simple concise one-line comments explaining key logic steps targeting non-ro
 
 
 We are intentionally down grading the robustness of the code for absolute precision.
+
+
+
+
+our new stage of development focus on the motion planner node to coordinate with the vendor fr3 node, to control the robot to do a raster scan. the raster part of trajectory coms from the trajectory planning node. the trajecotry node also publish poses, but we ignore that pose, and keep the robot at roughly  the same pose at start.
+
+Check the reference code to see how it does the logic, and align our new code logic to it as close as possible.
+
+Adhere strictly to our coding style descipline, write your logic in compact streamlined line-of-logic files, avoid short wrapper/helper functions, avoid unescesary CLI/configs, avoid fallback values or behaviors, avoid try/with/except.
+
+Also explain how does the motion control node, the vendor fr3 node, and the physical robot interact with each other to achieve control.
+
+
+
+
+- let motion node remember its beginning pose
+- check each segments, it looks almost like the robot went directly to raster trajectory, and end dierctly after
+- put into RViz GUI, button for preview, button for execution with input E (not EXECUTION)
+- IK then FK to check accuracy by supervisor
+- visualize preview trajectory in RViz
+- what happens if I publish another point while motion
+- add button for elegant stop motion: stop, then retract, then gack to beginning

@@ -14,7 +14,7 @@ cd path/to/franka3-sonopet-ros2
 ./scripts/bootstrap_ubuntu24_ros_jazzy.sh
 ```
 
-1. Pull vendor dependencies (Franka + RealSense) into the workspace:
+1. Pull vendor dependencies (Franka + RealSense wrapper) into the workspace:
 
 ```bash
 cd ros2_ws
@@ -23,10 +23,19 @@ vcs import src < third_party.repos
 
 That creates `ros2_ws/src/franka_ros2/` and `ros2_ws/src/realsense-ros/`, third party packages not tracked in git.
 
+1. Put the RealSense SDK source beside the wrapper packages:
+
+```bash
+cd ros2_ws/src/realsense-ros
+git clone https://github.com/IntelRealSense/librealsense.git -b v2.56.4
+```
+
+This workspace intentionally builds against this local `librealsense` checkout. Do **not** rely on the apt/ROS `ros-jazzy-librealsense2` CMake package; on this machine it may point at `/opt/ros/jazzy/lib/x86_64-linux-gnu/librealsense2.so.2.56.4` even when that file is missing.
+
 1. Install system/ROS dependencies:
 
 ```bash
-rosdep install --from-paths src --ignore-src -r -y || true
+rosdep install --from-paths src --ignore-src -r -y --skip-keys=librealsense2 || true
 ```
 
 Review any failures and install missing packages manually if needed.
@@ -43,19 +52,25 @@ source scripts/source_ubuntu24_ros_jazzy.sh
 cd ros2_ws
 ```
 
-**First build** (vendor stack, then everything — from README). 
+**First build** (vendor stack, then everything — from README).
 
 - Pass `CMAKE_IGNORE_PREFIX_PATH` on **both** `colcon build` commands if other manual install of libfranka exists, or `franka_hardware` may fail against the wrong headers.
+- Also hide the broken apt/ROS RealSense CMake package so `realsense2_camera` finds the workspace-built `librealsense`, not `/opt/ros/jazzy/.../realsense2.disabled`.
 
 ```bash
 colcon build --symlink-install \
   --packages-up-to franka_fr3_moveit_config realsense2_camera \
   --packages-skip mobile_fr3_duo_trajectory_controller \
-  --cmake-args -DBUILD_TESTING=OFF -DCMAKE_IGNORE_PREFIX_PATH=/usr/local
+  --cmake-args \
+    -DBUILD_TESTING=OFF \
+    -DCMAKE_IGNORE_PREFIX_PATH=/usr/local \
+    -DCMAKE_IGNORE_PATH=/opt/ros/jazzy/lib/x86_64-linux-gnu/cmake/realsense2.disabled
 
 colcon build --symlink-install \
   --packages-skip mobile_fr3_duo_trajectory_controller \
-  --cmake-args -DCMAKE_IGNORE_PREFIX_PATH=/usr/local
+  --cmake-args \
+    -DCMAKE_IGNORE_PREFIX_PATH=/usr/local \
+    -DCMAKE_IGNORE_PATH=/opt/ros/jazzy/lib/x86_64-linux-gnu/cmake/realsense2.disabled
 
 cd ..
 ```
@@ -71,7 +86,7 @@ ros2 pkg list | grep fr3_sonopet
 
 Expected: `fr3_sonopet_bringup`, `fr3_sonopet_description`, `fr3_sonopet_interfaces`, `fr3_sonopet_microphone`, `fr3_sonopet_motion`, `fr3_sonopet_recording`, `fr3_sonopet_supervisor`, `fr3_sonopet_tests`, `fr3_sonopet_trajectory`.
 
-After you change only this project’s Python packages, **a faster rebuild**:
+After you change only the high-iteration experiment Python packages, **a faster rebuild**:
 
 ```bash
 source ./scripts/source_ubuntu24_ros_jazzy.sh
@@ -81,6 +96,26 @@ cd ..
 ```
 
 `--symlink-install` means Python edits are picked up without rebuilding when you only change `.py` files.
+
+If you modified project packages **other than** trajectory, recording, or microphone, build the touched package set directly:
+
+```bash
+source ./scripts/source_ubuntu24_ros_jazzy.sh
+cd ./ros2_ws
+colcon build --symlink-install \
+  --packages-select fr3_sonopet_bringup fr3_sonopet_description fr3_sonopet_motion fr3_sonopet_supervisor fr3_sonopet_tests
+cd ..
+```
+
+If you changed `fr3_sonopet_interfaces` messages or actions, rebuild the interfaces plus downstream project packages:
+
+```bash
+source ./scripts/source_ubuntu24_ros_jazzy.sh
+cd ./ros2_ws
+colcon build --symlink-install \
+  --packages-up-to fr3_sonopet_bringup fr3_sonopet_motion fr3_sonopet_recording fr3_sonopet_supervisor fr3_sonopet_trajectory fr3_sonopet_tests
+cd ..
+```
 
 ---
 
@@ -146,7 +181,7 @@ source scripts/source_ubuntu24_ros_jazzy.sh
 ros2 launch fr3_sonopet_bringup fake_experiment.launch.py
 ```
 
-Same planning/motion/supervisor graph with `use_fake_hardware:=true` and `fake_execution` / `fake_run` enabled. No cameras, mic, recorder, or raster capture — use this to exercise TF and motion without the bench hardware.
+Same planning/motion/supervisor graph with `use_fake_hardware:=true` and `fake_run` enabled. No cameras, mic, recorder, or raster capture — use this to exercise TF and motion without the bench hardware.
 
 ---
 
@@ -306,7 +341,7 @@ For arm-only checks without sensors, use **Fake arm** (section 4) in terminal 1 
 4. `**mobile_fr3_duo_trajectory_controller` CMake/symlink install error** — add `--packages-skip mobile_fr3_duo_trajectory_controller` to every full-workspace `colcon build` (section 2). If `fr3_sonopet_bringup` still built, the Sonopet stack is usable.
 5. **Terminal closes right after `colcon build` finishes** — treat as success when `ros2 pkg list | grep fr3_sonopet` lists all nine project packages; re-source and continue.
 6. `**not found: ".../local_setup.bash"` when sourcing** — leftover from an interrupted build. Either finish a successful build or run `rm -rf ros2_ws/build ros2_ws/install ros2_ws/log` and rebuild from section 2.
-7. **Launch fails on `realsense2_camera` or core `franka_*`** — run `vcs import` and the section 2 `colcon build` sequence. For RealSense `API version mismatch`, install `ros-jazzy-librealsense2` and rebuild `realsense2_camera`.
+7. **`realsense2_camera` fails on missing `librealsense2.so.2.56.4`** — clone `librealsense` into `ros2_ws/src/realsense-ros/`, skip the rosdep `librealsense2` key, and rebuild with the section 2 `CMAKE_IGNORE_PATH` command.
 8. **Mic node dies immediately** — no matching USB mic; adjust `microphone.yaml`.
 9. **No camera images** — wrong serial in `cameras.yaml`, USB bandwidth, or camera unplugged; check `ros2 topic list` for `/RealSense_D405/...`.
 10. **Empty Planning PointCloud** — use **Full boot** (`rviz:=true`); wait for planner capture log; confirm TF from in-hand camera to `fr3_link0`.

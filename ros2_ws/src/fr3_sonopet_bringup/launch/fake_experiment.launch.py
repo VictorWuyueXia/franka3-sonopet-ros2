@@ -51,7 +51,6 @@ def generate_launch_description():
                 executable="motion_runner_node",
                 name="motion_runner_node",
                 output="screen",
-                parameters=[{"fake_execution": True}],
             ),
             Node(
                 package="fr3_sonopet_supervisor",

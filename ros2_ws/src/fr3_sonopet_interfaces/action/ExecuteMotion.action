@@ -1,6 +1,3 @@
-# Trajectory plan generated for the motion to execute
-fr3_sonopet_interfaces/RasterPlan plan
-
 # Operator-provided token to confirm execution
 string confirmation_token
 
