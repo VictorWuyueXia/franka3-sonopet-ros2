@@ -41,12 +41,14 @@ def _description_include(name: str):
     )
 
 
-def _raster_config():
-    path = Path(get_package_share_directory("fr3_sonopet_bringup")) / "config" / "raster.yaml"
-    return yaml.safe_load(path.read_text(encoding="utf-8"))["raster"]
-
-
 def generate_launch_description():
+    bringup_share = Path(get_package_share_directory("fr3_sonopet_bringup"))
+    raster_config = yaml.safe_load(
+        (bringup_share / "config" / "raster.yaml").read_text(encoding="utf-8")
+    )["raster"]
+    motion_config = yaml.safe_load(
+        (bringup_share / "config" / "motion.yaml").read_text(encoding="utf-8")
+    )["motion"]
     rviz_config = PathJoinSubstitution(
         [FindPackageShare("fr3_sonopet_bringup"), "rviz", "experiment.rviz"]
     )
@@ -62,13 +64,14 @@ def generate_launch_description():
                 executable="raster_planner_node",
                 name="raster_planner_node",
                 output="screen",
-                parameters=[_raster_config()],
+                parameters=[raster_config],
             ),
             Node(
                 package="fr3_sonopet_motion",
                 executable="motion_runner_node",
                 name="motion_runner_node",
                 output="screen",
+                parameters=[motion_config],
             ),
             Node(
                 package="fr3_sonopet_supervisor",

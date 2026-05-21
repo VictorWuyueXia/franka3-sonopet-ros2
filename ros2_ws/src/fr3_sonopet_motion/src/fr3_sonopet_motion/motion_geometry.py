@@ -14,12 +14,9 @@ IK_LINK_FRAME = "fr3_link8"
 PLANNING_GROUP = "fr3_arm"
 RASTER_PLAN_TOPIC = "/sonopet/raster_plan"
 IK_SERVICE = "/compute_ik"
+FK_SERVICE = "/compute_fk"
 CONTROLLER_ACTION = "/fr3_arm_controller/follow_joint_trajectory"
-PARKING_LIFT_M = 0.05
-RETRACT_LIFT_M = 0.05
 MAX_CARTESIAN_STEP_M = 0.01
-APPROACH_SPEED_M_S = 0.03
-RASTER_SPEED_M_S = 0.005
 POINT_TIME_FLOOR_S = 0.05
 IK_TIMEOUT_S = 1.0
 JOINT_NAMES = (
@@ -40,41 +37,36 @@ class CartesianSegment:
     speed_m_s: float
 
 
-def build_cartesian_segments(plan: RasterPlan, current_tcp_matrix: np.ndarray) -> list[CartesianSegment]:
-    """Re-anchor raster offsets at the current TCP pose and wrap them with staged motion."""
+def build_cartesian_segments(plan: RasterPlan, current_tcp_matrix: np.ndarray) -> list[np.ndarray]:
+    """Use raster plan positions with the latched TCP orientation."""
     plan_points = np.array(
         [[pose.position.x, pose.position.y, pose.position.z] for pose in plan.poses.poses],
         dtype=np.float64,
     )
     raster = np.repeat(current_tcp_matrix[None, :, :], plan_points.shape[0], axis=0)
-    raster[:, :3, 3] = current_tcp_matrix[:3, 3] + plan_points - plan_points[0]
+    raster[:, :3, 3] = plan_points
+    return list(raster)
+
+
+def staged_cartesian_segments(
+    idle_tcp_matrix: np.ndarray,
+    raster: list[np.ndarray],
+    motion_speed_m_s: float,
+    raster_speed_m_s: float,
+    parking_lift_m: float,
+) -> list[CartesianSegment]:
+    """Build the reference-style Cartesian stages around the relative raster path."""
     first = raster[0]
     last = raster[-1]
     parking = np.array(first, dtype=np.float64, copy=True)
     retract = np.array(last, dtype=np.float64, copy=True)
-    parking[2, 3] += PARKING_LIFT_M
-    retract[2, 3] += RETRACT_LIFT_M
+    parking[2, 3] += parking_lift_m
+    retract[2, 3] += parking_lift_m
     return [
-        CartesianSegment(
-            "approach",
-            densified_matrices([current_tcp_matrix, parking, first]),
-            APPROACH_SPEED_M_S,
-        ),
-        CartesianSegment(
-            "raster",
-            densified_matrices(list(raster)),
-            RASTER_SPEED_M_S,
-        ),
-        CartesianSegment(
-            "retract",
-            densified_matrices([last, retract]),
-            APPROACH_SPEED_M_S,
-        ),
-        CartesianSegment(
-            "return_to_start",
-            densified_matrices([retract, current_tcp_matrix]),
-            APPROACH_SPEED_M_S,
-        ),
+        CartesianSegment("idle_to_parking", densified_matrices([idle_tcp_matrix, parking]), motion_speed_m_s),
+        CartesianSegment("parking_to_first", densified_matrices([parking, first]), raster_speed_m_s),
+        CartesianSegment("raster", densified_matrices(raster), raster_speed_m_s),
+        CartesianSegment("retract", densified_matrices([last, retract]), motion_speed_m_s),
     ]
 
 
@@ -108,6 +100,28 @@ def joint_trajectory_points(
         sec = int(math.floor(elapsed_s))
         point = JointTrajectoryPoint()
         point.positions = [float(joint_dict[name]) for name in JOINT_NAMES]
+        point.time_from_start.sec = sec
+        point.time_from_start.nanosec = int(round((elapsed_s - float(sec)) * 1_000_000_000.0))
+        points.append(point)
+    return points
+
+
+def joint_interpolation_points(
+    start: dict[str, float],
+    goal: dict[str, float],
+    duration_s: float,
+) -> list[JointTrajectoryPoint]:
+    max_delta = max(abs(float(goal[name]) - float(start[name])) for name in JOINT_NAMES)
+    steps = max(1, int(math.ceil(max_delta / 0.05)))
+    points: list[JointTrajectoryPoint] = []
+    for index in range(steps + 1):
+        point = JointTrajectoryPoint()
+        ratio = float(index) / float(steps)
+        point.positions = [
+            (1.0 - ratio) * float(start[name]) + ratio * float(goal[name]) for name in JOINT_NAMES
+        ]
+        elapsed_s = max(float(index + 1) / float(steps + 1) * duration_s, POINT_TIME_FLOOR_S)
+        sec = int(math.floor(elapsed_s))
         point.time_from_start.sec = sec
         point.time_from_start.nanosec = int(round((elapsed_s - float(sec)) * 1_000_000_000.0))
         points.append(point)

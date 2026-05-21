@@ -23,11 +23,13 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     cameras = (package_root / "config" / "cameras.yaml").read_text(encoding="utf-8")
     recording = (package_root / "config" / "recording_topics.yaml").read_text(encoding="utf-8")
     raster = (package_root / "config" / "raster.yaml").read_text(encoding="utf-8")
+    motion = (package_root / "config" / "motion.yaml").read_text(encoding="utf-8")
     microphone = (package_root / "config" / "microphone.yaml").read_text(encoding="utf-8")
 
     assert not any(line.lstrip().startswith("#") for line in cameras.splitlines())
     assert not any(line.lstrip().startswith("#") for line in recording.splitlines())
     assert not any(line.lstrip().startswith("#") for line in raster.splitlines())
+    assert not any(line.lstrip().startswith("#") for line in motion.splitlines())
     assert "rgb_camera_profile: 848x480x30" in cameras
     assert "translation_xyz:" in cameras
     assert "quaternion_xyzw:" in cameras
@@ -41,6 +43,10 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     assert "planning_cloud_topic: /RealSense_D405/in_hand/depth/color/points" in raster
     assert "planning_cloud_display_topic: /sonopet/planning_cloud" in raster
     assert "clicked_point_topic: /clicked_point" in raster
+    assert "idle_joint_positions:" in motion
+    assert "motion_speed_m_s: 0.03" in motion
+    assert "raster_speed_m_s:" in motion
+    assert "parking_lift_m: 0.05" in motion
     assert "/microphone/audio" in recording
     assert "ros__parameters:" in microphone
     assert "iMM-6C" in microphone
@@ -74,6 +80,8 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert '"pointcloud.stream_filter"' in cameras_launch
     assert '"enable_color": "true"' in cameras_launch
     assert "raster.yaml" in experiment_launch
+    assert "motion.yaml" in experiment_launch
+    assert "parameters=[motion_config]" in experiment_launch
     assert '" hand:=false"' in franka_launch
     assert '" ee_id:=none"' in franka_launch
     assert "franka_gripper" not in franka_launch
@@ -85,11 +93,12 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "joint_state_publisher" not in franka_launch
     pointcloud_arg = 'launch_arguments={"pointcloud_enable": LaunchConfiguration("rviz")}'
     assert pointcloud_arg in experiment_launch
-    assert "parameters=[_raster_config()]" in experiment_launch
+    assert "parameters=[raster_config]" in experiment_launch
     assert "/sonopet/planning_cloud" in rviz
     assert "Transient Local" in rviz
     assert "/sonopet/raster_plan/poses" in rviz
     assert "/sonopet/raster_plan/markers" in rviz
+    assert "fr3_sonopet_interfaces/MotionControlPanel" in rviz
     assert "rviz_default_plugins/PublishPoint" in rviz
     assert "rviz_default_plugins/RobotModel" in rviz
     assert "/robot_description" in rviz
@@ -99,3 +108,16 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "recording_topics.yaml" in recording_launch
     assert "cameras.yaml" in recording_launch
     assert "microphone.yaml" in microphone_launch
+
+
+def test_motion_panel_plugin_is_exported_from_interfaces_package():
+    src_root = Path(__file__).resolve().parents[2]
+    interfaces_root = src_root / "fr3_sonopet_interfaces"
+    cmake = (interfaces_root / "CMakeLists.txt").read_text(encoding="utf-8")
+    package = (interfaces_root / "package.xml").read_text(encoding="utf-8")
+    plugin = (interfaces_root / "plugin_description.xml").read_text(encoding="utf-8")
+
+    assert "pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)" in cmake
+    assert "fr3_sonopet_interfaces/MotionControlPanel" in plugin
+    assert "<build_depend>rviz_common</build_depend>" in package
+    assert "<exec_depend>rclcpp_action</exec_depend>" in package

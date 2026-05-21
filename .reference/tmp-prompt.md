@@ -129,8 +129,11 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 
 
 - let motion node remember its beginning pose
-- check each segments, it looks almost like the robot went directly to raster trajectory, and end dierctly after
 - put into RViz GUI, button for preview, button for execution with input E (not EXECUTION)
+- check each segments, it looks almost like the robot went directly to raster trajectory, and end dierctly after
+
+
+
 - IK then FK to check accuracy by supervisor
 - visualize preview trajectory in RViz
 - what happens if I publish another point while motion

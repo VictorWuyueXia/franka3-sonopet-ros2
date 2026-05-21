@@ -1,0 +1,8 @@
+<library path="motion_control_panel">
+  <class
+    name="fr3_sonopet_interfaces/MotionControlPanel"
+    type="fr3_sonopet_interfaces::MotionControlPanel"
+    base_class_type="rviz_common::Panel">
+    <description>Operator controls for FR3 Sonopet motion preview and execution.</description>
+  </class>
+</library>

@@ -48,8 +48,7 @@ Always work from `ros2_ws` for `colcon`. Use a **fresh terminal** and source onl
 
 ```bash
 cd /path/to/franka3-sonopet-ros2
-source scripts/source_ubuntu24_ros_jazzy.sh
-cd ros2_ws
+
 ```
 
 **First build** (vendor stack, then everything — from README).
@@ -58,6 +57,9 @@ cd ros2_ws
 - Also hide the broken apt/ROS RealSense CMake package so `realsense2_camera` finds the workspace-built `librealsense`, not `/opt/ros/jazzy/.../realsense2.disabled`.
 
 ```bash
+source scripts/source_ubuntu24_ros_jazzy.sh
+cd ros2_ws
+
 colcon build --symlink-install \
   --packages-up-to franka_fr3_moveit_config realsense2_camera \
   --packages-skip mobile_fr3_duo_trajectory_controller \
@@ -97,25 +99,9 @@ cd ..
 
 `--symlink-install` means Python edits are picked up without rebuilding when you only change `.py` files.
 
-If you modified project packages **other than** trajectory, recording, or microphone, build the touched package set directly:
+If you modified project packages **other than** trajectory, recording, or microphone, set the packages in the rebuild.
 
-```bash
-source ./scripts/source_ubuntu24_ros_jazzy.sh
-cd ./ros2_ws
-colcon build --symlink-install \
-  --packages-select fr3_sonopet_bringup fr3_sonopet_description fr3_sonopet_motion fr3_sonopet_supervisor fr3_sonopet_tests
-cd ..
-```
 
-If you changed `fr3_sonopet_interfaces` messages or actions, rebuild the interfaces plus downstream project packages:
-
-```bash
-source ./scripts/source_ubuntu24_ros_jazzy.sh
-cd ./ros2_ws
-colcon build --symlink-install \
-  --packages-up-to fr3_sonopet_bringup fr3_sonopet_motion fr3_sonopet_recording fr3_sonopet_supervisor fr3_sonopet_trajectory fr3_sonopet_tests
-cd ..
-```
 
 ---
 
@@ -162,17 +148,6 @@ Everything in **Real arm**, plus:
 - Live RGB panels and raster overlays after you pick a surface point (section 6)
 
 **Config files:** camera serials in `config/cameras.yaml`; raster crop/trim in `config/raster.yaml`. Default mic config requires a device name containing `iMM-6C` or `imm6c` (`config/microphone.yaml`).
-
-
-
-<!-- ### Real arm
-
-```bash
-source scripts/source_ubuntu24_ros_jazzy.sh
-ros2 launch fr3_sonopet_bringup experiment.launch.py
-```
-
-Starts Franka control, tool TF, both D405s, microphone, recording node, raster planner, motion runner, and experiment supervisor. Continuous point clouds stay off; the recorder still snapshots PCDs at recording start/stop. -->
 
 ### Fake arm
 
@@ -274,6 +249,7 @@ That cloud is kept for all later RViz display and raster fitting; new camera fra
 1. Toolbar → **Publish Point** (not **Select**).
 2. Click on the **Planning PointCloud** in the 3D view.
 3. RViz publishes `/clicked_point`; the planner responds with `/sonopet/raster_plan/poses` and `/sonopet/raster_plan/markers`.
+4. Use the **Sonopet Motion** panel to preview the scan, then type `E` and press **Execute** when the workspace is clear.
 
 On failure, read `raster_planner_node` for `Raster plan rejected:` (cloud not captured yet, click off the cloud, or TF missing).
 
@@ -336,12 +312,12 @@ For arm-only checks without sensors, use **Fake arm** (section 4) in terminal 1 
 ## 9. Common pitfalls
 
 1. `**ros2: command not found`** — source `scripts/source_ubuntu24_ros_jazzy.sh` (or `/opt/ros/jazzy/setup.bash`).
-2. `**Package 'fr3_sonopet_bringup' not found**` — build with `colcon build` and source again.
+2. `**Package 'fr3_sonopet_bringup' not found`** — build with `colcon build` and source again.
 3. `**franka_hardware` compile error (`getTargetFeedback`, headers under `/usr/local/include/franka`)** — source `scripts/source_ubuntu24_ros_jazzy.sh` before building and add `-DCMAKE_IGNORE_PREFIX_PATH=/usr/local` to every `colcon build` (see section 2).
 4. `**mobile_fr3_duo_trajectory_controller` CMake/symlink install error** — add `--packages-skip mobile_fr3_duo_trajectory_controller` to every full-workspace `colcon build` (section 2). If `fr3_sonopet_bringup` still built, the Sonopet stack is usable.
 5. **Terminal closes right after `colcon build` finishes** — treat as success when `ros2 pkg list | grep fr3_sonopet` lists all nine project packages; re-source and continue.
 6. `**not found: ".../local_setup.bash"` when sourcing** — leftover from an interrupted build. Either finish a successful build or run `rm -rf ros2_ws/build ros2_ws/install ros2_ws/log` and rebuild from section 2.
-7. **`realsense2_camera` fails on missing `librealsense2.so.2.56.4`** — clone `librealsense` into `ros2_ws/src/realsense-ros/`, skip the rosdep `librealsense2` key, and rebuild with the section 2 `CMAKE_IGNORE_PATH` command.
+7. `**realsense2_camera` fails on missing `librealsense2.so.2.56.4`** — clone `librealsense` into `ros2_ws/src/realsense-ros/`, skip the rosdep `librealsense2` key, and rebuild with the section 2 `CMAKE_IGNORE_PATH` command.
 8. **Mic node dies immediately** — no matching USB mic; adjust `microphone.yaml`.
 9. **No camera images** — wrong serial in `cameras.yaml`, USB bandwidth, or camera unplugged; check `ros2 topic list` for `/RealSense_D405/...`.
 10. **Empty Planning PointCloud** — use **Full boot** (`rviz:=true`); wait for planner capture log; confirm TF from in-hand camera to `fr3_link0`.
