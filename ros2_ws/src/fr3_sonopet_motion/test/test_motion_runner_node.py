@@ -8,6 +8,7 @@ from std_msgs.msg import Header
 
 from fr3_sonopet_motion.operator_policy import EXECUTE_TOKEN
 from fr3_sonopet_motion.motion_geometry import (
+    SEGMENT_SETTLING_TIME_S,
     build_cartesian_segments,
     joint_interpolation_points,
     joint_trajectory_points,
@@ -68,6 +69,7 @@ def test_cartesian_segments_follow_approach_raster_retract_return_order():
     assert segments[2].speed_m_s == 0.005
     assert segments[0].speed_m_s == 0.03
     assert segments[3].tcp_matrices[-1][2, 3] > segments[2].tcp_matrices[-1][2, 3]
+    assert np.allclose(segments[0].tcp_matrices[0], idle)
     for segment in segments:
         joints = [
             {
@@ -90,6 +92,20 @@ def test_cartesian_segments_follow_approach_raster_retract_return_order():
             points[0].time_from_start
         )
         assert segment_dt + 1e-9 >= distance_m / segment.speed_m_s
+
+
+def test_idle_to_parking_orientation_changes_gradually_after_idle_pose():
+    idle = np.eye(4, dtype=np.float64)
+    raster_start = np.eye(4, dtype=np.float64)
+    raster_start[:3, :3] = rotation_matrix_from_quaternion(
+        np.array([0.0, 0.0, math.sin(math.pi / 4.0), math.cos(math.pi / 4.0)])
+    )
+    raster_start[:3, 3] = np.array([0.08, 0.0, 0.0])
+    segment = staged_cartesian_segments(idle, [raster_start], 0.03, 0.005, 0.05)[0]
+
+    assert np.allclose(segment.tcp_matrices[0], idle)
+    assert not np.allclose(segment.tcp_matrices[1][:3, :3], idle[:3, :3])
+    assert not np.allclose(segment.tcp_matrices[1][:3, :3], raster_start[:3, :3])
 
 
 def test_raster_timing_is_slower_than_approach_for_equal_distance():
@@ -118,6 +134,8 @@ def test_raster_timing_is_slower_than_approach_for_equal_distance():
     raster_dt = _duration_seconds(raster[-1].time_from_start) - _duration_seconds(
         raster[0].time_from_start
     )
+    assert _duration_seconds(approach[0].time_from_start) == SEGMENT_SETTLING_TIME_S
+    assert _duration_seconds(raster[0].time_from_start) == SEGMENT_SETTLING_TIME_S
     assert raster_dt > approach_dt
 
 
@@ -155,5 +173,7 @@ def test_execute_token_and_beginning_pose_latch_are_encoded():
     assert 'setattr(self, "_beginning_seed", None)' in runner
     assert "if self._beginning_seed is None:" in runner
     assert "idle_joint_positions" in runner
+    assert 'segment.name == "idle_to_parking" and index == 0' in runner
+    assert "solved_points.append(dict(seed))" in runner
     assert "active_segment = \"current_to_idle\"" in runner
     assert "active_segment = \"return_to_start\"" in runner

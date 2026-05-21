@@ -291,7 +291,11 @@ class MotionRunnerNode(Node):
             trajectory = JointTrajectory()
             trajectory.joint_names = list(JOINT_NAMES)
             solved_points: list[dict[str, float]] = []
-            for tcp_matrix in segment.tcp_matrices:
+            for index, tcp_matrix in enumerate(segment.tcp_matrices):
+                if segment.name == "idle_to_parking" and index == 0:
+                    seed = dict(idle_seed)
+                    solved_points.append(dict(seed))
+                    continue
                 base_from_ik_link = tcp_matrix @ np.linalg.inv(link_from_tcp)
                 sec = int(math.floor(IK_TIMEOUT_S))
                 request = GetPositionIK.Request()

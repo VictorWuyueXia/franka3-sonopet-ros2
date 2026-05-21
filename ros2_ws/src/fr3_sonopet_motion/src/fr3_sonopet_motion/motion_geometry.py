@@ -18,6 +18,7 @@ FK_SERVICE = "/compute_fk"
 CONTROLLER_ACTION = "/fr3_arm_controller/follow_joint_trajectory"
 MAX_CARTESIAN_STEP_M = 0.01
 POINT_TIME_FLOOR_S = 0.05
+SEGMENT_SETTLING_TIME_S = 0.5
 IK_TIMEOUT_S = 1.0
 JOINT_NAMES = (
     "fr3_joint1",
@@ -80,6 +81,11 @@ def densified_matrices(matrices: list[np.ndarray]) -> list[np.ndarray]:
             t = float(index) / float(steps)
             matrix = np.array(end, dtype=np.float64, copy=True)
             matrix[:3, 3] = start[:3, 3] + t * delta
+            rotation_u, _, rotation_vt = np.linalg.svd((1.0 - t) * start[:3, :3] + t * end[:3, :3])
+            matrix[:3, :3] = rotation_u @ rotation_vt
+            if np.linalg.det(matrix[:3, :3]) < 0.0:
+                rotation_u[:, -1] *= -1.0
+                matrix[:3, :3] = rotation_u @ rotation_vt
             dense.append(matrix)
     return dense
 
@@ -90,7 +96,7 @@ def joint_trajectory_points(
     speed_m_s: float,
 ) -> list[JointTrajectoryPoint]:
     points: list[JointTrajectoryPoint] = []
-    elapsed_s = POINT_TIME_FLOOR_S
+    elapsed_s = SEGMENT_SETTLING_TIME_S
     for index, joint_dict in enumerate(joints):
         if index > 0:
             distance_m = float(
@@ -120,7 +126,7 @@ def joint_interpolation_points(
         point.positions = [
             (1.0 - ratio) * float(start[name]) + ratio * float(goal[name]) for name in JOINT_NAMES
         ]
-        elapsed_s = max(float(index + 1) / float(steps + 1) * duration_s, POINT_TIME_FLOOR_S)
+        elapsed_s = max(float(index + 1) / float(steps + 1) * duration_s, SEGMENT_SETTLING_TIME_S)
         sec = int(math.floor(elapsed_s))
         point.time_from_start.sec = sec
         point.time_from_start.nanosec = int(round((elapsed_s - float(sec)) * 1_000_000_000.0))

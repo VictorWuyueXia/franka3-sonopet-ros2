@@ -131,7 +131,10 @@ class RasterPlannerNode(Node):
             point_msg.header.frame_id,
             self._target_frame,
         )
-        self._build_publish_plan(selected_base)
+        try:
+            self._build_publish_plan(selected_base)
+        except ValueError as exc:
+            self.get_logger().warning(f"Ignored clicked point: {exc}")
 
     def _execute_build_plan(self, goal_handle):
         # The action path keeps scripted planning available with target-frame centers.

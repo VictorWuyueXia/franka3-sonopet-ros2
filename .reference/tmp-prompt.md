@@ -133,8 +133,13 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 - check each segments, it looks almost like the robot went directly to raster trajectory, and end dierctly after
 
 
+- add button for elegant stop motion: stop, then retract, then gack to beginning
+
+
 
 - IK then FK to check accuracy by supervisor
 - visualize preview trajectory in RViz
 - what happens if I publish another point while motion
-- add button for elegant stop motion: stop, then retract, then gack to beginning
+
+- re-select last X-Y, find new Z
+- dig-in distance in raster patch (0-2mm)
