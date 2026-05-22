@@ -175,5 +175,8 @@ def test_execute_token_and_beginning_pose_latch_are_encoded():
     assert "idle_joint_positions" in runner
     assert 'segment.name == "idle_to_parking" and index == 0' in runner
     assert "solved_points.append(dict(seed))" in runner
-    assert "active_segment = \"current_to_idle\"" in runner
-    assert "active_segment = \"return_to_start\"" in runner
+    assert "_send_controller_trajectory(goal_handle, trajectory, \"current_to_idle\")" in runner
+    assert "_send_controller_trajectory(goal_handle, trajectory, \"return_to_start\")" in runner
+    assert "/sonopet/stop_motion" in runner
+    assert "cancel_goal_async" in runner
+    assert "retract[2, 3] +=" in runner

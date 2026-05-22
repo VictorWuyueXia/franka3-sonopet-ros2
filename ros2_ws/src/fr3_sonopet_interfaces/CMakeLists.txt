@@ -11,6 +11,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rviz_common REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RasterPatch.msg"
@@ -18,8 +19,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RunState.msg"
   "msg/AudioChunk.msg"
   "action/BuildRasterPlan.action"
+  "action/CapturePointCloud.action"
   "action/PreviewMotion.action"
   "action/ExecuteMotion.action"
+  "action/StopMotion.action"
   "action/RecordExperiment.action"
   DEPENDENCIES builtin_interfaces geometry_msgs std_msgs
 )
@@ -33,6 +36,7 @@ ament_target_dependencies(motion_control_panel
   rclcpp
   rclcpp_action
   rviz_common
+  std_srvs
 )
 pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)
 

@@ -40,7 +40,7 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     assert "pointcloud_snapshots:" in cameras
     assert "/RealSense_D405/in_hand/color/image_rect_raw" in recording
     assert "/RealSense_D405/fixed/color/image_rect_raw" in recording
-    assert "planning_cloud_topic: /RealSense_D405/in_hand/depth/color/points" in raster
+    assert "planning_cloud_topic: /sonopet/captured_planning_cloud" in raster
     assert "planning_cloud_display_topic: /sonopet/planning_cloud" in raster
     assert "clicked_point_topic: /clicked_point" in raster
     assert "idle_joint_positions:" in motion

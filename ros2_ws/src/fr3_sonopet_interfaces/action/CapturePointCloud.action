@@ -1,0 +1,11 @@
+string label
+bool publish_planning_cloud
+bool save_artifacts
+---
+bool success
+string message
+string[] camera_keys
+string[] artifact_paths
+int32[] point_counts
+---
+string phase

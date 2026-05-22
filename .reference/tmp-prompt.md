@@ -140,6 +140,7 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 - IK then FK to check accuracy by supervisor
 - visualize preview trajectory in RViz
 - what happens if I publish another point while motion
+- saves multiple scans?
 
 - re-select last X-Y, find new Z
 - dig-in distance in raster patch (0-2mm)

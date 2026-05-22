@@ -7,7 +7,7 @@ from fr3_sonopet_interfaces.msg import RasterPatch, RasterPlan
 from geometry_msgs.msg import Point, PointStamped, Pose, PoseArray, Quaternion, Vector3
 from rclpy.action import ActionServer
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import PointCloud2, PointField
 from sensor_msgs_py import point_cloud2
@@ -25,7 +25,7 @@ class RasterPlannerNode(Node):
     def __init__(self) -> None:
         super().__init__("raster_planner_node")
         self.declare_parameter("target_frame", "fr3_link0")
-        self.declare_parameter("planning_cloud_topic", "/RealSense_D405/in_hand/depth/color/points")
+        self.declare_parameter("planning_cloud_topic", "/sonopet/captured_planning_cloud")
         self.declare_parameter("planning_cloud_display_topic", "/sonopet/planning_cloud")
         self.declare_parameter("planning_cloud_max_distance_m", 0.5)
         self.declare_parameter("planning_cloud_trim_fraction", 0.2)
@@ -72,7 +72,12 @@ class RasterPlannerNode(Node):
             PointCloud2,
             self._cloud_topic,
             self._on_cloud,
-            qos_profile_sensor_data,
+            QoSProfile(
+                depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                history=HistoryPolicy.KEEP_LAST,
+                reliability=ReliabilityPolicy.RELIABLE,
+            ),
         )
         self._clicked_sub = self.create_subscription(
             PointStamped,
@@ -93,12 +98,9 @@ class RasterPlannerNode(Node):
         )
 
     def _on_cloud(self, cloud_msg: PointCloud2) -> None:
-        if self._planning_cloud_points is not None:
-            return
-
         cloud_frame = cloud_msg.header.frame_id
         if not cloud_frame:
-            raise RuntimeError("Initial point cloud does not carry a frame_id")
+            raise RuntimeError("Captured point cloud does not carry a frame_id")
         xyz, rgb = _pointcloud2_xyz_rgb_arrays(cloud_msg)
         keep_indices = _planning_cloud_indices(
             xyz, self._cloud_max_distance_m, self._cloud_trim_fraction
@@ -108,7 +110,7 @@ class RasterPlannerNode(Node):
         target_from_cloud = self._lookup_matrix(self._target_frame, cloud_frame)
         target_xyz = _transform_points(filtered_xyz, target_from_cloud)
 
-        # Freeze the startup cloud directly in the robot base frame used for raster geometry.
+        # Cache the latest captured cloud directly in the robot base frame used for raster geometry.
         self._planning_cloud_points = target_xyz
         self._display_cloud_pub.publish(
             _make_pointcloud2(
@@ -119,7 +121,7 @@ class RasterPlannerNode(Node):
             )
         )
         self.get_logger().info(
-            f"Captured planning cloud with {filtered_xyz.shape[0]} points; "
+            f"Updated planning cloud with {filtered_xyz.shape[0]} points; "
             f"published {self._display_cloud_topic} in {self._target_frame}"
             f" ({'colored' if filtered_rgb is not None else 'xyz-only'})"
         )

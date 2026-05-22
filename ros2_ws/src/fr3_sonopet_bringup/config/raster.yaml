@@ -1,6 +1,6 @@
 raster:
   target_frame: fr3_link0
-  planning_cloud_topic: /RealSense_D405/in_hand/depth/color/points
+  planning_cloud_topic: /sonopet/captured_planning_cloud
   planning_cloud_display_topic: /sonopet/planning_cloud
   planning_cloud_max_distance_m: 0.5
   planning_cloud_trim_fraction: 0.2

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import math
-from threading import Event
+from threading import Event, RLock
 
 import numpy as np
 import rclpy
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
-from fr3_sonopet_interfaces.action import ExecuteMotion, PreviewMotion
+from fr3_sonopet_interfaces.action import ExecuteMotion, PreviewMotion, StopMotion
 from fr3_sonopet_interfaces.msg import RasterPlan
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.msg import MoveItErrorCodes
@@ -33,6 +33,7 @@ from fr3_sonopet_motion.motion_geometry import (
     RASTER_PLAN_TOPIC,
     TOOL_FRAME,
     build_cartesian_segments,
+    densified_matrices,
     joint_interpolation_points,
     joint_trajectory_points,
     quaternion_from_matrix,
@@ -59,6 +60,12 @@ class MotionRunnerNode(Node):
         self._beginning_seed: dict[str, float] | None = None
         self._beginning_base_from_tcp: np.ndarray | None = None
         self._beginning_link_from_tcp: np.ndarray | None = None
+        self._active_execute = False
+        self._active_controller_handle = None
+        self._controller_done = Event()
+        self._controller_done.set()
+        self._stop_requested = Event()
+        self._state_lock = RLock()
         self._callback_group = ReentrantCallbackGroup()
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -114,6 +121,13 @@ class MotionRunnerNode(Node):
             lambda goal_handle: self._run_motion(goal_handle, execute=True),
             callback_group=self._callback_group,
         )
+        self._stop_server = ActionServer(
+            self,
+            StopMotion,
+            "/sonopet/stop_motion",
+            self._execute_stop_motion,
+            callback_group=self._callback_group,
+        )
         self.get_logger().info(
             "Motion runner ready: "
             f"base={BASE_FRAME}, tool={TOOL_FRAME}, ik_link={IK_LINK_FRAME}, "
@@ -131,6 +145,9 @@ class MotionRunnerNode(Node):
 
         feedback = ExecuteMotion.Feedback() if execute else PreviewMotion.Feedback()
         if execute:
+            with self._state_lock:
+                self._active_execute = True
+                self._stop_requested.clear()
             feedback.active_segment = "compile"
         else:
             feedback.phase = "compile"
@@ -270,17 +287,8 @@ class MotionRunnerNode(Node):
         joint_segment_count += 1
         joint_waypoint_count += len(trajectory.points)
         if execute:
-            feedback = ExecuteMotion.Feedback()
-            feedback.active_segment = "current_to_idle"
-            goal_handle.publish_feedback(feedback)
-            controller_goal = FollowJointTrajectory.Goal()
-            controller_goal.trajectory = trajectory
-            controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
-            if not controller_handle.accepted:
-                raise RuntimeError(MOTION_VENDOR_ERROR)
-            controller_result = wait_future(controller_handle.get_result_async()).result
-            if controller_result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
-                raise RuntimeError(MOTION_VENDOR_ERROR)
+            if not self._send_controller_trajectory(goal_handle, trajectory, "current_to_idle"):
+                return self._finish_stopped_execution(goal_handle, result)
         seed = dict(idle_seed)
 
         # Segment B: idle to parking, Cartesian TCP motion above the first raster point.
@@ -288,6 +296,8 @@ class MotionRunnerNode(Node):
         # Segment D: raster, slow Cartesian scan through the planner's base-frame waypoints.
         # Segment E: retract, Cartesian lift away from the final raster point.
         for segment in cartesian_segments:
+            if execute and self._stop_requested.is_set():
+                return self._finish_stopped_execution(goal_handle, result)
             trajectory = JointTrajectory()
             trajectory.joint_names = list(JOINT_NAMES)
             solved_points: list[dict[str, float]] = []
@@ -341,20 +351,8 @@ class MotionRunnerNode(Node):
             joint_waypoint_count += len(trajectory.points)
 
             if execute:
-                # Sending one segment at a time mirrors the reference hardware execution sequence.
-                feedback = ExecuteMotion.Feedback()
-                feedback.active_segment = segment.name
-                goal_handle.publish_feedback(feedback)
-                controller_goal = FollowJointTrajectory.Goal()
-                controller_goal.trajectory = trajectory
-                controller_handle = wait_future(
-                    self._controller_client.send_goal_async(controller_goal)
-                )
-                if not controller_handle.accepted:
-                    raise RuntimeError(MOTION_VENDOR_ERROR)
-                controller_result = wait_future(controller_handle.get_result_async()).result
-                if controller_result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
-                    raise RuntimeError(MOTION_VENDOR_ERROR)
+                if not self._send_controller_trajectory(goal_handle, trajectory, segment.name):
+                    return self._finish_stopped_execution(goal_handle, result)
 
         # Segment F: return to start, pure joint motion back to the latched beginning state.
         trajectory = JointTrajectory()
@@ -371,17 +369,8 @@ class MotionRunnerNode(Node):
         joint_segment_count += 1
         joint_waypoint_count += len(trajectory.points)
         if execute:
-            feedback = ExecuteMotion.Feedback()
-            feedback.active_segment = "return_to_start"
-            goal_handle.publish_feedback(feedback)
-            controller_goal = FollowJointTrajectory.Goal()
-            controller_goal.trajectory = trajectory
-            controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
-            if not controller_handle.accepted:
-                raise RuntimeError(MOTION_VENDOR_ERROR)
-            controller_result = wait_future(controller_handle.get_result_async()).result
-            if controller_result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
-                raise RuntimeError(MOTION_VENDOR_ERROR)
+            if not self._send_controller_trajectory(goal_handle, trajectory, "return_to_start"):
+                return self._finish_stopped_execution(goal_handle, result)
 
         goal_handle.succeed()
         result.success = True
@@ -389,7 +378,169 @@ class MotionRunnerNode(Node):
         result.message = (
             f"{verb} {joint_segment_count} segments and {joint_waypoint_count} joint waypoints."
         )
+        if execute:
+            with self._state_lock:
+                self._active_execute = False
         return result
+
+    def _send_controller_trajectory(self, goal_handle, trajectory: JointTrajectory, segment_name: str) -> bool:
+        # Sending one segment at a time mirrors the reference hardware execution sequence.
+        feedback = ExecuteMotion.Feedback()
+        feedback.active_segment = segment_name
+        goal_handle.publish_feedback(feedback)
+        controller_goal = FollowJointTrajectory.Goal()
+        controller_goal.trajectory = trajectory
+        self._controller_done.clear()
+        controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
+        if not controller_handle.accepted:
+            self._controller_done.set()
+            raise RuntimeError(MOTION_VENDOR_ERROR)
+        with self._state_lock:
+            self._active_controller_handle = controller_handle
+        controller_result = wait_future(controller_handle.get_result_async()).result
+        with self._state_lock:
+            self._active_controller_handle = None
+        self._controller_done.set()
+        if self._stop_requested.is_set():
+            return False
+        if controller_result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
+            raise RuntimeError(MOTION_VENDOR_ERROR)
+        return True
+
+    def _finish_stopped_execution(self, goal_handle, result):
+        with self._state_lock:
+            self._active_execute = False
+        goal_handle.abort()
+        result.success = False
+        result.message = "Execution stopped by operator; recovery is handled by the stop action."
+        return result
+
+    def _execute_stop_motion(self, goal_handle):
+        result = StopMotion.Result()
+        with self._state_lock:
+            active = self._active_execute
+            controller_handle = self._active_controller_handle
+        if not active:
+            goal_handle.succeed()
+            result.success = True
+            result.message = "No active motion to stop."
+            return result
+
+        feedback = StopMotion.Feedback()
+        feedback.phase = "cancel_current"
+        goal_handle.publish_feedback(feedback)
+        self._stop_requested.set()
+        if controller_handle is not None:
+            wait_future(controller_handle.cancel_goal_async())
+        self._controller_done.wait()
+
+        feedback.phase = "retract"
+        goal_handle.publish_feedback(feedback)
+        self._run_stop_recovery()
+
+        with self._state_lock:
+            self._active_execute = False
+            self._stop_requested.clear()
+        goal_handle.succeed()
+        result.success = True
+        result.message = "Motion stopped, retracted, and returned to the beginning pose."
+        return result
+
+    def _run_stop_recovery(self) -> None:
+        if self._latest_joint_state is None or self._beginning_seed is None or self._beginning_link_from_tcp is None:
+            raise RuntimeError(MOTION_INPUT_ERROR)
+        self._ik_client.wait_for_service()
+        self._controller_client.wait_for_server()
+        current_seed = dict(zip(self._latest_joint_state.name, self._latest_joint_state.position, strict=True))
+        seed = {name: float(current_seed[name]) for name in JOINT_NAMES}
+        base_from_tcp_msg = self._tf_buffer.lookup_transform(BASE_FRAME, TOOL_FRAME, Time()).transform
+        base_from_tcp = np.eye(4, dtype=np.float64)
+        base_from_tcp[:3, :3] = rotation_matrix_from_quaternion(
+            np.array(
+                [
+                    base_from_tcp_msg.rotation.x,
+                    base_from_tcp_msg.rotation.y,
+                    base_from_tcp_msg.rotation.z,
+                    base_from_tcp_msg.rotation.w,
+                ],
+                dtype=np.float64,
+            )
+        )
+        base_from_tcp[:3, 3] = np.array(
+            [
+                base_from_tcp_msg.translation.x,
+                base_from_tcp_msg.translation.y,
+                base_from_tcp_msg.translation.z,
+            ],
+            dtype=np.float64,
+        )
+        retract = np.array(base_from_tcp, dtype=np.float64, copy=True)
+        retract[2, 3] += float(self.get_parameter("parking_lift_m").value)
+        retract_trajectory, seed = self._solve_cartesian_trajectory(
+            densified_matrices([base_from_tcp, retract]),
+            seed,
+            self._beginning_link_from_tcp,
+            float(self.get_parameter("motion_speed_m_s").value),
+        )
+        self._send_recovery_trajectory(retract_trajectory)
+        return_trajectory = JointTrajectory()
+        return_trajectory.joint_names = list(JOINT_NAMES)
+        return_trajectory.points = joint_interpolation_points(
+            seed,
+            self._beginning_seed,
+            max(float(np.linalg.norm(retract[:3, 3] - base_from_tcp[:3, 3])) / float(self.get_parameter("motion_speed_m_s").value), 0.05),
+        )
+        self._send_recovery_trajectory(return_trajectory)
+
+    def _solve_cartesian_trajectory(
+        self,
+        tcp_matrices: list[np.ndarray],
+        seed: dict[str, float],
+        link_from_tcp: np.ndarray,
+        speed_m_s: float,
+    ) -> tuple[JointTrajectory, dict[str, float]]:
+        solved_points: list[dict[str, float]] = []
+        for tcp_matrix in tcp_matrices:
+            base_from_ik_link = tcp_matrix @ np.linalg.inv(link_from_tcp)
+            sec = int(math.floor(IK_TIMEOUT_S))
+            request = GetPositionIK.Request()
+            request.ik_request.group_name = PLANNING_GROUP
+            request.ik_request.ik_link_name = IK_LINK_FRAME
+            request.ik_request.pose_stamped = PoseStamped()
+            request.ik_request.pose_stamped.header.frame_id = BASE_FRAME
+            request.ik_request.pose_stamped.pose.position.x = float(base_from_ik_link[0, 3])
+            request.ik_request.pose_stamped.pose.position.y = float(base_from_ik_link[1, 3])
+            request.ik_request.pose_stamped.pose.position.z = float(base_from_ik_link[2, 3])
+            request.ik_request.pose_stamped.pose.orientation = quaternion_from_matrix(base_from_ik_link)
+            request.ik_request.robot_state.joint_state.name = list(JOINT_NAMES)
+            request.ik_request.robot_state.joint_state.position = [float(seed[name]) for name in JOINT_NAMES]
+            request.ik_request.avoid_collisions = True
+            request.ik_request.timeout = Duration(
+                sec=sec,
+                nanosec=int(round((IK_TIMEOUT_S - float(sec)) * 1_000_000_000.0)),
+            )
+            response = wait_future(self._ik_client.call_async(request))
+            if response.error_code.val != MoveItErrorCodes.SUCCESS:
+                raise RuntimeError(MOTION_VENDOR_ERROR)
+            solution_state = dict(
+                zip(response.solution.joint_state.name, response.solution.joint_state.position, strict=True)
+            )
+            seed = {name: float(solution_state[name]) for name in JOINT_NAMES}
+            solved_points.append(dict(seed))
+        trajectory = JointTrajectory()
+        trajectory.joint_names = list(JOINT_NAMES)
+        trajectory.points = joint_trajectory_points(solved_points, tcp_matrices, speed_m_s)
+        return trajectory, seed
+
+    def _send_recovery_trajectory(self, trajectory: JointTrajectory) -> None:
+        controller_goal = FollowJointTrajectory.Goal()
+        controller_goal.trajectory = trajectory
+        controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
+        if not controller_handle.accepted:
+            raise RuntimeError(MOTION_VENDOR_ERROR)
+        controller_result = wait_future(controller_handle.get_result_async()).result
+        if controller_result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
+            raise RuntimeError(MOTION_VENDOR_ERROR)
 
 
 def wait_future(future):

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fr3_sonopet_recording import artifact_writers
 from fr3_sonopet_recording.artifact_writers import capture_pointcloud_snapshot
 
@@ -42,3 +44,16 @@ def test_pointcloud_snapshot_disables_after_failure(tmp_path):
     assert enabled_states == [True, False]
     assert result.success is False
     assert "no pointcloud" in result.error
+
+
+def test_recording_node_exposes_unified_capture_and_artifact_discard():
+    package_root = Path(__file__).resolve().parents[1]
+    node_source = (
+        package_root / "src" / "fr3_sonopet_recording" / "recording_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "/sonopet/capture_pointcloud" in node_source
+    assert "/sonopet/captured_planning_cloud" in node_source
+    assert "/sonopet/set_artifact_saving" in node_source
+    assert "_capture_startup_planning_cloud" in node_source
+    assert "shutil.rmtree(artifact_path)" in node_source
