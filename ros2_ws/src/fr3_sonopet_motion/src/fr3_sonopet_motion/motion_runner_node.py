@@ -30,6 +30,7 @@ from fr3_sonopet_motion.motion_geometry import (
     IK_TIMEOUT_S,
     JOINT_NAMES,
     PLANNING_GROUP,
+    PREVIEW_JOINT_STATES_TOPIC,
     RASTER_PLAN_TOPIC,
     TOOL_FRAME,
     build_cartesian_segments,
@@ -61,6 +62,7 @@ class MotionRunnerNode(Node):
         self._beginning_base_from_tcp: np.ndarray | None = None
         self._beginning_link_from_tcp: np.ndarray | None = None
         self._active_execute = False
+        self._active_preview = False
         self._active_controller_handle = None
         self._controller_done = Event()
         self._controller_done.set()
@@ -70,6 +72,11 @@ class MotionRunnerNode(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
         # Cache the latest raster plan and robot joints so actions always compile from live inputs.
+        self._preview_joint_pub = self.create_publisher(
+            JointState,
+            PREVIEW_JOINT_STATES_TOPIC,
+            10,
+        )
         self._plan_sub = self.create_subscription(
             RasterPlan,
             RASTER_PLAN_TOPIC,
@@ -85,7 +92,7 @@ class MotionRunnerNode(Node):
         self._joint_sub = self.create_subscription(
             JointState,
             "/joint_states",
-            lambda joint_state: setattr(self, "_latest_joint_state", joint_state),
+            self._on_joint_state,
             10,
             callback_group=self._callback_group,
         )
@@ -134,6 +141,14 @@ class MotionRunnerNode(Node):
             f"controller={CONTROLLER_ACTION}"
         )
 
+    def _on_joint_state(self, joint_state: JointState) -> None:
+        # Idle preview TF mirrors the live arm until playback takes ownership of the preview stream.
+        self._latest_joint_state = joint_state
+        with self._state_lock:
+            preview_active = self._active_preview
+        if not preview_active:
+            self._preview_joint_pub.publish(joint_state)
+
     def _run_motion(self, goal_handle, execute: bool):
         """Compile the latest raster plan and optionally stream each segment to the FR3 controller."""
         result = ExecuteMotion.Result() if execute else PreviewMotion.Result()
@@ -150,6 +165,9 @@ class MotionRunnerNode(Node):
                 self._stop_requested.clear()
             feedback.active_segment = "compile"
         else:
+            with self._state_lock:
+                self._active_preview = True
+                self._stop_requested.clear()
             feedback.phase = "compile"
         goal_handle.publish_feedback(feedback)
 
@@ -338,6 +356,16 @@ class MotionRunnerNode(Node):
         )
         trajectories.append(("return_to_start", return_to_start))
 
+        if not execute:
+            if not self._publish_preview_playback(goal_handle, trajectories):
+                with self._state_lock:
+                    self._active_preview = False
+                    self._stop_requested.clear()
+                goal_handle.abort()
+                result.success = False
+                result.message = "Preview stopped by operator."
+                return result
+
         if execute:
             for segment_name, trajectory in trajectories:
                 if self._stop_requested.is_set():
@@ -375,7 +403,7 @@ class MotionRunnerNode(Node):
 
         goal_handle.succeed()
         result.success = True
-        verb = "Executed" if execute else "Preview compiled"
+        verb = "Executed" if execute else "Preview played"
         result.message = (
             f"{verb} {len(trajectories)} segments and "
             f"{sum(len(trajectory.points) for _, trajectory in trajectories)} joint waypoints."
@@ -383,13 +411,45 @@ class MotionRunnerNode(Node):
         if execute:
             with self._state_lock:
                 self._active_execute = False
+        else:
+            with self._state_lock:
+                self._active_preview = False
+                self._stop_requested.clear()
         return result
+
+    def _publish_preview_playback(self, goal_handle, trajectories: list[tuple[str, JointTrajectory]]) -> bool:
+        for segment_name, trajectory in trajectories:
+            feedback = PreviewMotion.Feedback(phase=segment_name)
+            goal_handle.publish_feedback(feedback)
+            previous_s: float | None = None
+            for point in trajectory.points:
+                if self._stop_requested.is_set():
+                    return False
+                point_s = float(point.time_from_start.sec) + float(point.time_from_start.nanosec) * 1e-9
+                if previous_s is not None:
+                    Event().wait(max(point_s - previous_s, 0.0))
+                if self._stop_requested.is_set():
+                    return False
+                joint_state = JointState()
+                joint_state.header.stamp = self.get_clock().now().to_msg()
+                joint_state.name = list(JOINT_NAMES)
+                joint_state.position = list(point.positions)
+                self._preview_joint_pub.publish(joint_state)
+                previous_s = point_s
+        return True
 
     def _run_stop_recovery(self, goal_handle):
         result = StopMotion.Result()
         with self._state_lock:
+            preview_active = self._active_preview
             active = self._active_execute
             controller_handle = self._active_controller_handle
+        if preview_active:
+            self._stop_requested.set()
+            goal_handle.succeed()
+            result.success = True
+            result.message = "Preview stopped by operator."
+            return result
         if not active:
             goal_handle.succeed()
             result.success = True

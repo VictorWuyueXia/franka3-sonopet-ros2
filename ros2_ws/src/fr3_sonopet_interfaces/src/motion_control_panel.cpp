@@ -11,7 +11,9 @@
 #include <pluginlib/class_list_macros.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <rviz_common/display.hpp>
 #include <rviz_common/display_context.hpp>
+#include <rviz_common/display_group.hpp>
 #include <rviz_common/panel.hpp>
 #include <rviz_common/ros_integration/ros_node_abstraction_iface.hpp>
 
@@ -62,11 +64,16 @@ public:
       PreviewMotion::Goal goal;
       rclcpp_action::Client<PreviewMotion>::SendGoalOptions options;
       status_->setText("Preview requested.");
+      setPreviewDisplayMode(true);
       options.goal_response_callback = [this](auto goal_handle) {
         status_->setText(goal_handle ? "Preview accepted." : "Preview rejected.");
+        if (!goal_handle) {
+          setPreviewDisplayMode(false);
+        }
       };
       options.result_callback = [this](const auto & wrapped_result) {
         status_->setText(QString::fromStdString(wrapped_result.result->message));
+        setPreviewDisplayMode(false);
       };
       preview_client_->async_send_goal(goal, options);
     });
@@ -102,6 +109,7 @@ public:
       };
       options.result_callback = [this](const auto & wrapped_result) {
         status_->setText(QString::fromStdString(wrapped_result.result->message));
+        setPreviewDisplayMode(false);
       };
       stop_client_->async_send_goal(goal, options);
     });
@@ -164,6 +172,20 @@ private:
   using ExecuteMotion = fr3_sonopet_interfaces::action::ExecuteMotion;
   using StopMotion = fr3_sonopet_interfaces::action::StopMotion;
   using CapturePointCloud = fr3_sonopet_interfaces::action::CapturePointCloud;
+
+  void setPreviewDisplayMode(bool preview_enabled)
+  {
+    auto * root = getDisplayContext()->getRootDisplayGroup();
+    for (int index = 0; index < root->numDisplays(); ++index) {
+      auto * display = root->getDisplayAt(index);
+      const auto name = display->getName();
+      if (name == "Preview Franka Robot" || name == "Preview Sonopet Tool") {
+        display->setEnabled(preview_enabled);
+      } else if (name == "Franka Robot" || name == "Sonopet Tool" || name == "TF") {
+        display->setEnabled(!preview_enabled);
+      }
+    }
+  }
 
   QPushButton * preview_button_;
   QPushButton * execute_button_;

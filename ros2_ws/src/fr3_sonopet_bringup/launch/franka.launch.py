@@ -159,6 +159,27 @@ def generate_launch_description():
         output="both",
         parameters=[robot_description],
     )
+    preview_robot_state_publisher = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        name="preview_robot_state_publisher",
+        namespace=namespace,
+        output="log",
+        parameters=[robot_description, {"frame_prefix": "preview/"}],
+        remappings=[("joint_states", "/sonopet/preview/joint_states")],
+    )
+    preview_root_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="preview_root_static_transform_publisher",
+        arguments=[
+            "--x", "0", "--y", "0", "--z", "0",
+            "--qx", "0", "--qy", "0", "--qz", "0", "--qw", "1",
+            "--frame-id", "base",
+            "--child-frame-id", "preview/base",
+        ],
+        output="log",
+    )
 
     ros2_controllers_path = os.path.join(
         get_package_share_directory("franka_fr3_moveit_config"),
@@ -211,6 +232,8 @@ def generate_launch_description():
             DeclareLaunchArgument("fake_sensor_commands", default_value="false"),
             move_group_node,
             robot_state_publisher,
+            preview_robot_state_publisher,
+            preview_root_tf,
             ros2_control_node,
             franka_robot_state_broadcaster,
         ]

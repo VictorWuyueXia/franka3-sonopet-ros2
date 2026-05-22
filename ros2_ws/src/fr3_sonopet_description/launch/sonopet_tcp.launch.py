@@ -64,6 +64,14 @@ def generate_launch_description():
                 name="robot_state_publisher",
                 output="log",
                 parameters=[{"robot_description": urdf}],
+            ),
+            Node(
+                package="robot_state_publisher",
+                executable="robot_state_publisher",
+                namespace="sonopet",
+                name="preview_robot_state_publisher",
+                output="log",
+                parameters=[{"robot_description": urdf}, {"frame_prefix": "preview/"}],
             )
         ]
     )

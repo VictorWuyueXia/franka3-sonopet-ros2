@@ -137,8 +137,12 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 + saves multiple scans
 
 
-- hide display panel in RViz window
++ hide display panel in RViz window
+
+
 - visualize preview trajectory in RViz
+
+
 - re-select last X-Y, find new Z
 - dig-in distance in raster patch (0-2mm)
 - IK then FK to check accuracy by supervisor

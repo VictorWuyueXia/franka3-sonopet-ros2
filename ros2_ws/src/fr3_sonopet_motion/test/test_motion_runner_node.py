@@ -8,6 +8,7 @@ from std_msgs.msg import Header
 
 from fr3_sonopet_motion.operator_policy import EXECUTE_TOKEN
 from fr3_sonopet_motion.motion_geometry import (
+    PREVIEW_JOINT_STATES_TOPIC,
     SEGMENT_SETTLING_TIME_S,
     build_cartesian_segments,
     joint_interpolation_points,
@@ -182,3 +183,24 @@ def test_execute_token_and_beginning_pose_latch_are_encoded():
     assert "/sonopet/stop_motion" in runner
     assert "cancel_goal_async" in runner
     assert "retract[2, 3] +=" in runner
+
+
+def test_preview_playback_joint_state_path_is_encoded():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert PREVIEW_JOINT_STATES_TOPIC == "/sonopet/preview/joint_states"
+    assert "self._preview_joint_pub = self.create_publisher(" in runner
+    assert "PREVIEW_JOINT_STATES_TOPIC" in runner
+    assert "self._on_joint_state" in runner
+    assert "if not preview_active:" in runner
+    assert "if not execute:" in runner
+    assert "self._publish_preview_playback(goal_handle, trajectories)" in runner
+    assert "controller_goal = FollowJointTrajectory.Goal()" in runner
+    assert "self._active_preview = False" in runner
+    assert "self._active_preview = True" in runner
+    assert "if self._stop_requested.is_set():" in runner
+    assert "preview_active = self._active_preview" in runner
+    assert "Preview stopped by operator." in runner

@@ -56,8 +56,12 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
 
 def test_launch_files_use_sensor_only_recording_defaults():
     package_root = Path(__file__).resolve().parents[1]
+    src_root = Path(__file__).resolve().parents[2]
     cameras_launch = (package_root / "launch" / "cameras.launch.py").read_text(encoding="utf-8")
     franka_launch = (package_root / "launch" / "franka.launch.py").read_text(encoding="utf-8")
+    sonopet_tcp_launch = (
+        src_root / "fr3_sonopet_description" / "launch" / "sonopet_tcp.launch.py"
+    ).read_text(encoding="utf-8")
     experiment_launch = (package_root / "launch" / "experiment.launch.py").read_text(
         encoding="utf-8"
     )
@@ -91,6 +95,12 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert '"joints": FR3_ARM_JOINTS' in franka_launch
     assert '"interfaces": ["position", "velocity", "effort"]' in franka_launch
     assert "joint_state_publisher" not in franka_launch
+    assert "/sonopet/preview/joint_states" in franka_launch
+    assert "preview_robot_state_publisher" in franka_launch
+    assert '"frame_prefix": "preview/"' in franka_launch
+    assert '"--frame-id", "base"' in franka_launch
+    assert '"--child-frame-id", "preview/base"' in franka_launch
+    assert '"frame_prefix": "preview/"' in sonopet_tcp_launch
     pointcloud_arg = 'launch_arguments={"pointcloud_enable": LaunchConfiguration("rviz")}'
     assert pointcloud_arg in experiment_launch
     assert "parameters=[raster_config]" in experiment_launch
@@ -104,6 +114,11 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "rviz_default_plugins/RobotModel" in rviz
     assert "/robot_description" in rviz
     assert "/sonopet/robot_description" in rviz
+    assert "Preview Franka Robot" in rviz
+    assert "Preview Sonopet Tool" in rviz
+    assert "Value: /sonopet/preview/joint_states" not in rviz
+    assert "Enabled: false" in rviz
+    assert "TF Prefix: preview" in rviz
     assert "All Enabled: false" in rviz
     assert "Color Transformer: RGB8" in rviz
     assert "recording_topics.yaml" in recording_launch
@@ -117,8 +132,16 @@ def test_motion_panel_plugin_is_exported_from_interfaces_package():
     cmake = (interfaces_root / "CMakeLists.txt").read_text(encoding="utf-8")
     package = (interfaces_root / "package.xml").read_text(encoding="utf-8")
     plugin = (interfaces_root / "plugin_description.xml").read_text(encoding="utf-8")
+    panel = (interfaces_root / "src" / "motion_control_panel.cpp").read_text(encoding="utf-8")
 
     assert "pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)" in cmake
     assert "fr3_sonopet_interfaces/MotionControlPanel" in plugin
     assert "<build_depend>rviz_common</build_depend>" in package
     assert "<exec_depend>rclcpp_action</exec_depend>" in package
+    assert "setPreviewDisplayMode(true)" in panel
+    assert "setPreviewDisplayMode(false)" in panel
+    assert "Preview Franka Robot" in panel
+    assert "Preview Sonopet Tool" in panel
+    assert "Franka Robot" in panel
+    assert "Sonopet Tool" in panel
+    assert 'name == "TF"' in panel
