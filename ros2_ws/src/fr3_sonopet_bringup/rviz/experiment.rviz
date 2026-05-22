@@ -1,6 +1,4 @@
 Panels:
-  - Class: rviz_common/Displays
-    Name: Displays
   - Class: fr3_sonopet_interfaces/MotionControlPanel
     Name: Sonopet Motion
 Visualization Manager:

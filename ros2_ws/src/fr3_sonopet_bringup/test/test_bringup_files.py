@@ -99,6 +99,7 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "/sonopet/raster_plan/poses" in rviz
     assert "/sonopet/raster_plan/markers" in rviz
     assert "fr3_sonopet_interfaces/MotionControlPanel" in rviz
+    assert "rviz_common/Displays" not in rviz
     assert "rviz_default_plugins/PublishPoint" in rviz
     assert "rviz_default_plugins/RobotModel" in rviz
     assert "/robot_description" in rviz

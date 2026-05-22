@@ -175,8 +175,10 @@ def test_execute_token_and_beginning_pose_latch_are_encoded():
     assert "idle_joint_positions" in runner
     assert 'segment.name == "idle_to_parking" and index == 0' in runner
     assert "solved_points.append(dict(seed))" in runner
-    assert "_send_controller_trajectory(goal_handle, trajectory, \"current_to_idle\")" in runner
-    assert "_send_controller_trajectory(goal_handle, trajectory, \"return_to_start\")" in runner
+    assert "def _run_stop_recovery(self, goal_handle):" in runner
+    assert "def _compute_recovery_trajectory(self) -> list[JointTrajectory]:" in runner
+    assert 'trajectories.append(("current_to_idle", current_to_idle))' in runner
+    assert 'trajectories.append(("return_to_start", return_to_start))' in runner
     assert "/sonopet/stop_motion" in runner
     assert "cancel_goal_async" in runner
     assert "retract[2, 3] +=" in runner

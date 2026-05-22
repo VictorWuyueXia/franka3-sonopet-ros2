@@ -55,8 +55,8 @@ public:
     motion_row->addWidget(stop_button_);
     operator_row->addWidget(rescan_button_);
     operator_row->addWidget(save_artifacts_);
-    layout->addLayout(motion_row);
     layout->addLayout(operator_row);
+    layout->addLayout(motion_row);
     layout->addWidget(status_);
     connect(preview_button_, &QPushButton::clicked, this, [this]() {
       PreviewMotion::Goal goal;

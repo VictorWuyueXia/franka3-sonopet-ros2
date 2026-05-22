@@ -55,5 +55,9 @@ def test_recording_node_exposes_unified_capture_and_artifact_discard():
     assert "/sonopet/capture_pointcloud" in node_source
     assert "/sonopet/captured_planning_cloud" in node_source
     assert "/sonopet/set_artifact_saving" in node_source
-    assert "_capture_startup_planning_cloud" in node_source
-    assert "shutil.rmtree(artifact_path)" in node_source
+    assert "def _runtime(self) -> None:" in node_source
+    assert "def _capture_pointcloud(" in node_source
+    assert "def _save_artifacts(self) -> None:" in node_source
+    assert "scans: list[PointCloudScan]" in node_source
+    assert "RgbVideoRecorder" not in node_source
+    assert "AudioWavRecorder" not in node_source
