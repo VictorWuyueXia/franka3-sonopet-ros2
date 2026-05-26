@@ -146,7 +146,8 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 + re-select last X-Y, find new Z
 
 - run alias
-- save config, time format
+- save config, time format, save at start&end of raster, only start and end timestamp
+- stop motion adhere to speed limit
 - dig-in distance in raster patch (0-2mm)
 - IK then FK to check accuracy by supervisor
 - what happens if I publish another point while motion
