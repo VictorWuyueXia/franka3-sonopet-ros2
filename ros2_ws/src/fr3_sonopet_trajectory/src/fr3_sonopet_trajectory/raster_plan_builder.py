@@ -58,6 +58,31 @@ def build_raster_from_cloud(
     )
 
 
+def build_raster_with_mean_surface_z(
+    cloud_points: np.ndarray,
+    selected_center_base: np.ndarray,
+    spec: RasterSpec,
+    *,
+    pre_filtered: bool = False,
+) -> RasterBuild:
+    """Update the stored center height from raster samples before final generation."""
+    trajectory = build_raster_from_cloud(
+        cloud_points,
+        selected_center_base,
+        spec,
+        pre_filtered=pre_filtered,
+    )
+    raster_mask = np.asarray(
+        [segment_name != "retract" for segment_name in trajectory.segment_names],
+        dtype=bool,
+    )
+    if not bool(np.any(raster_mask)):
+        raise ValueError("Raster generation produced no non-retract waypoints")
+    updated_center = np.asarray(selected_center_base, dtype=np.float64).copy()
+    updated_center[2] = float(np.mean(trajectory.points[raster_mask, 2]))
+    return trajectory
+
+
 def config_hash(spec: RasterSpec) -> str:
     """Hash the numerical raster policy into a compact plan identity string."""
     payload = (

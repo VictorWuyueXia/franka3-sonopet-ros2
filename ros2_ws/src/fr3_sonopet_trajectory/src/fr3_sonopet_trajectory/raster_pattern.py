@@ -128,7 +128,11 @@ def build_surface_raster(
         lines,
         normal_lines=normal_lines,
     )
-    return SurfaceRaster(points=points, normal_reference_points=normal_points, segment_names=segment_names)
+    return SurfaceRaster(
+        points=points,
+        normal_reference_points=normal_points,
+        segment_names=segment_names,
+    )
 
 
 def _concat_lines_with_retract(

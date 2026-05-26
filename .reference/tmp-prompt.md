@@ -140,10 +140,13 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 + hide display panel in RViz window
 
 
-- visualize preview trajectory in RViz
++ visualize preview trajectory in RViz
 
++ re-try getting joint states when switched to programming mode
++ re-select last X-Y, find new Z
 
-- re-select last X-Y, find new Z
+- run alias
+- save config, time format
 - dig-in distance in raster patch (0-2mm)
 - IK then FK to check accuracy by supervisor
 - what happens if I publish another point while motion

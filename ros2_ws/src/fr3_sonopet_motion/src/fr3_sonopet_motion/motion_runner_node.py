@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import math
-from threading import Event, RLock
+from threading import Condition, Event, RLock, Thread
+from time import monotonic
 
 import numpy as np
 import rclpy
+from action_msgs.msg import GoalStatus
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
+from controller_manager_msgs.srv import SetHardwareComponentState, SwitchController
 from fr3_sonopet_interfaces.action import ExecuteMotion, PreviewMotion, StopMotion
 from fr3_sonopet_interfaces.msg import RasterPlan
+from franka_msgs.action import ErrorRecovery
 from geometry_msgs.msg import PoseStamped
+from lifecycle_msgs.msg import State
 from moveit_msgs.msg import MoveItErrorCodes
 from moveit_msgs.srv import GetPositionFK, GetPositionIK
 from rclpy.action import ActionClient, ActionServer
@@ -45,6 +50,18 @@ from fr3_sonopet_motion.operator_policy import EXECUTE_TOKEN
 
 MOTION_INPUT_ERROR = "Motion runner input is incomplete or inconsistent."
 MOTION_VENDOR_ERROR = "Motion vendor command failed."
+JOINT_STATE_SILENCE_S = 0.5
+JOINT_STATE_MONITOR_PERIOD_S = 0.1
+WAITING_FOR_JOINT_STATES = "waiting_for_joint_states"
+FRANKA_ERROR_RECOVERY_ACTION = "/action_server/error_recovery"
+HARDWARE_STATE_SERVICE = "/controller_manager/set_hardware_component_state"
+SWITCH_CONTROLLER_SERVICE = "/controller_manager/switch_controller"
+FRANKA_HARDWARE_COMPONENT = "FrankaHardwareInterface"
+FRANKA_RECOVERY_CONTROLLERS = (
+    "franka_robot_state_broadcaster",
+    "joint_state_broadcaster",
+    "fr3_arm_controller",
+)
 
 
 class MotionRunnerNode(Node):
@@ -58,6 +75,11 @@ class MotionRunnerNode(Node):
         self.declare_parameter("parking_lift_m")
         self._latest_plan: RasterPlan | None = None
         self._latest_joint_state: JointState | None = None
+        self._joint_state_count = 0
+        self._joint_state_received_s: float | None = None
+        self._joint_states_available = False
+        self._joint_states_lost = False
+        self._recovery_active = False
         self._beginning_seed: dict[str, float] | None = None
         self._beginning_base_from_tcp: np.ndarray | None = None
         self._beginning_link_from_tcp: np.ndarray | None = None
@@ -68,6 +90,7 @@ class MotionRunnerNode(Node):
         self._controller_done.set()
         self._stop_requested = Event()
         self._state_lock = RLock()
+        self._joint_state_condition = Condition(self._state_lock)
         self._callback_group = ReentrantCallbackGroup()
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -87,6 +110,11 @@ class MotionRunnerNode(Node):
                 setattr(self, "_beginning_link_from_tcp", None),
             ),
             10,
+            callback_group=self._callback_group,
+        )
+        self._joint_state_monitor = self.create_timer(
+            JOINT_STATE_MONITOR_PERIOD_S,
+            self._monitor_joint_states,
             callback_group=self._callback_group,
         )
         self._joint_sub = self.create_subscription(
@@ -111,6 +139,22 @@ class MotionRunnerNode(Node):
             self,
             FollowJointTrajectory,
             CONTROLLER_ACTION,
+            callback_group=self._callback_group,
+        )
+        self._franka_recovery_client = ActionClient(
+            self,
+            ErrorRecovery,
+            FRANKA_ERROR_RECOVERY_ACTION,
+            callback_group=self._callback_group,
+        )
+        self._hardware_state_client = self.create_client(
+            SetHardwareComponentState,
+            HARDWARE_STATE_SERVICE,
+            callback_group=self._callback_group,
+        )
+        self._switch_controller_client = self.create_client(
+            SwitchController,
+            SWITCH_CONTROLLER_SERVICE,
             callback_group=self._callback_group,
         )
         # Preview compiles only; execute compiles the same path and streams it to the vendor controller.
@@ -143,11 +187,131 @@ class MotionRunnerNode(Node):
 
     def _on_joint_state(self, joint_state: JointState) -> None:
         # Idle preview TF mirrors the live arm until playback takes ownership of the preview stream.
-        self._latest_joint_state = joint_state
         with self._state_lock:
+            recovered = self._joint_states_lost
+            self._latest_joint_state = joint_state
+            self._joint_state_count += 1
+            self._joint_state_received_s = monotonic()
+            self._joint_states_available = True
+            self._joint_states_lost = False
             preview_active = self._active_preview
+            self._joint_state_condition.notify_all()
+        if recovered:
+            self.get_logger().info("Vendor joint states recovered.")
+        with self._state_lock:
+            self._recovery_active = False
         if not preview_active:
             self._preview_joint_pub.publish(joint_state)
+
+    def _monitor_joint_states(self) -> None:
+        # Robot mode switches are detected passively by the vendor joint-state stream going silent.
+        with self._state_lock:
+            if self._joint_state_received_s is None or not self._joint_states_available:
+                return
+            if monotonic() - self._joint_state_received_s <= JOINT_STATE_SILENCE_S:
+                return
+            self._latest_joint_state = None
+            self._beginning_seed = None
+            self._beginning_base_from_tcp = None
+            self._beginning_link_from_tcp = None
+            self._joint_states_available = False
+            self._joint_states_lost = True
+            self._joint_state_condition.notify_all()
+        self.get_logger().warn("Vendor joint states unavailable; waiting for robot mode recovery.")
+        self._start_vendor_recovery()
+
+    def _start_vendor_recovery(self) -> None:
+        with self._state_lock:
+            if self._recovery_active:
+                return
+            self._recovery_active = True
+        Thread(target=self._run_vendor_recovery, daemon=True).start()
+
+    def _run_vendor_recovery(self) -> None:
+        while True:
+            with self._state_lock:
+                if self._joint_states_available and self._latest_joint_state is not None:
+                    self._recovery_active = False
+                    return
+                observed_count = self._joint_state_count
+            try:
+                self._recover_vendor_stack_once()
+            except Exception as exc:
+                self.get_logger().warn(f"Franka recovery attempt failed: {exc}")
+            with self._joint_state_condition:
+                if (
+                    self._joint_states_available
+                    and self._latest_joint_state is not None
+                    and self._joint_state_count > observed_count
+                ):
+                    self._recovery_active = False
+                    return
+                self._joint_state_condition.wait(JOINT_STATE_SILENCE_S)
+
+    def _recover_vendor_stack_once(self) -> None:
+        # Recovery follows the vendor boundary first, then restores the launch-time controllers.
+        self._send_franka_error_recovery()
+        self._activate_franka_hardware()
+        self._activate_franka_controllers()
+
+    def _send_franka_error_recovery(self) -> None:
+        if not self._franka_recovery_client.wait_for_server(timeout_sec=JOINT_STATE_SILENCE_S):
+            raise RuntimeError(f"{FRANKA_ERROR_RECOVERY_ACTION} is unavailable")
+        goal_handle = wait_future(self._franka_recovery_client.send_goal_async(ErrorRecovery.Goal()))
+        if not goal_handle.accepted:
+            raise RuntimeError("Franka error recovery goal was rejected")
+        recovery_result = wait_future(goal_handle.get_result_async())
+        if recovery_result.status != GoalStatus.STATUS_SUCCEEDED:
+            raise RuntimeError("Franka error recovery did not succeed")
+
+    def _activate_franka_hardware(self) -> None:
+        if not self._hardware_state_client.wait_for_service(timeout_sec=JOINT_STATE_SILENCE_S):
+            raise RuntimeError(f"{HARDWARE_STATE_SERVICE} is unavailable")
+        request = SetHardwareComponentState.Request()
+        request.name = FRANKA_HARDWARE_COMPONENT
+        request.target_state = State(id=State.PRIMARY_STATE_ACTIVE, label="active")
+        response = wait_future(self._hardware_state_client.call_async(request))
+        if not response.ok:
+            raise RuntimeError(f"{FRANKA_HARDWARE_COMPONENT} did not activate")
+
+    def _activate_franka_controllers(self) -> None:
+        if not self._switch_controller_client.wait_for_service(timeout_sec=JOINT_STATE_SILENCE_S):
+            raise RuntimeError(f"{SWITCH_CONTROLLER_SERVICE} is unavailable")
+        request = SwitchController.Request()
+        request.activate_controllers = list(FRANKA_RECOVERY_CONTROLLERS)
+        request.deactivate_controllers = []
+        request.strictness = SwitchController.Request.STRICT
+        request.activate_asap = True
+        request.timeout = Duration(sec=1)
+        response = wait_future(self._switch_controller_client.call_async(request))
+        if not response.ok:
+            raise RuntimeError(f"Controller activation failed: {response.message}")
+
+    def _wait_for_vendor_joint_state(self, goal_handle, feedback_kind: str) -> JointState | None:
+        # Motion always compiles from a current physical robot state, never from a stale cache.
+        with self._state_lock:
+            if self._joint_states_available and self._latest_joint_state is not None:
+                return self._latest_joint_state
+            observed_count = self._joint_state_count
+        while True:
+            if feedback_kind == "preview":
+                goal_handle.publish_feedback(PreviewMotion.Feedback(phase=WAITING_FOR_JOINT_STATES))
+            elif feedback_kind == "execute":
+                goal_handle.publish_feedback(
+                    ExecuteMotion.Feedback(active_segment=WAITING_FOR_JOINT_STATES)
+                )
+            elif feedback_kind == "stop":
+                goal_handle.publish_feedback(StopMotion.Feedback(phase=WAITING_FOR_JOINT_STATES))
+            with self._joint_state_condition:
+                if (
+                    self._joint_states_available
+                    and self._latest_joint_state is not None
+                    and self._joint_state_count > observed_count
+                ):
+                    return self._latest_joint_state
+                if feedback_kind in ("preview", "execute") and self._stop_requested.is_set():
+                    return None
+                self._joint_state_condition.wait(JOINT_STATE_MONITOR_PERIOD_S)
 
     def _run_motion(self, goal_handle, execute: bool):
         """Compile the latest raster plan and optionally stream each segment to the FR3 controller."""
@@ -173,11 +337,23 @@ class MotionRunnerNode(Node):
 
         if (
             self._latest_plan is None
-            or self._latest_joint_state is None
             or self._latest_plan.header.frame_id != BASE_FRAME
             or len(self._latest_plan.poses.poses) == 0
         ):
             raise RuntimeError(MOTION_INPUT_ERROR)
+        joint_state = self._wait_for_vendor_joint_state(
+            goal_handle,
+            "execute" if execute else "preview",
+        )
+        if joint_state is None:
+            with self._state_lock:
+                self._active_execute = False
+                self._active_preview = False
+                self._stop_requested.clear()
+            goal_handle.abort()
+            result.success = False
+            result.message = "Motion stopped while waiting for vendor joint states."
+            return result
 
         self._ik_client.wait_for_service()
         self._fk_client.wait_for_service()
@@ -186,9 +362,7 @@ class MotionRunnerNode(Node):
 
         # The first preview or execute after a new raster plan freezes the scan's starting pose.
         if self._beginning_seed is None:
-            seed_state = dict(
-                zip(self._latest_joint_state.name, self._latest_joint_state.position, strict=True)
-            )
+            seed_state = dict(zip(joint_state.name, joint_state.position, strict=True))
             base_from_tcp_msg = self._tf_buffer.lookup_transform(BASE_FRAME, TOOL_FRAME, Time()).transform
             base_from_link_msg = self._tf_buffer.lookup_transform(
                 BASE_FRAME, IK_LINK_FRAME, Time()
@@ -378,28 +552,32 @@ class MotionRunnerNode(Node):
                 feedback = ExecuteMotion.Feedback()
                 feedback.active_segment = segment_name
                 goal_handle.publish_feedback(feedback)
-                controller_goal = FollowJointTrajectory.Goal()
-                controller_goal.trajectory = trajectory
-                self._controller_done.clear()
-                controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
-                if not controller_handle.accepted:
-                    self._controller_done.set()
-                    raise RuntimeError(MOTION_VENDOR_ERROR)
-                with self._state_lock:
-                    self._active_controller_handle = controller_handle
-                controller_result = wait_future(controller_handle.get_result_async()).result
-                with self._state_lock:
-                    self._active_controller_handle = None
-                self._controller_done.set()
-                if self._stop_requested.is_set():
+                while True:
+                    if self._wait_for_vendor_joint_state(goal_handle, "execute") is None:
+                        with self._state_lock:
+                            self._active_execute = False
+                        goal_handle.abort()
+                        result.success = False
+                        result.message = (
+                            "Execution stopped by operator; recovery is handled by the stop action."
+                        )
+                        return result
+                    controller_result = self._send_controller_trajectory(trajectory)
+                    if self._stop_requested.is_set():
+                        with self._state_lock:
+                            self._active_execute = False
+                        goal_handle.abort()
+                        result.success = False
+                        result.message = (
+                            "Execution stopped by operator; recovery is handled by the stop action."
+                        )
+                        return result
+                    if controller_result == FollowJointTrajectory.Result.SUCCESSFUL:
+                        break
                     with self._state_lock:
-                        self._active_execute = False
-                    goal_handle.abort()
-                    result.success = False
-                    result.message = "Execution stopped by operator; recovery is handled by the stop action."
-                    return result
-                if controller_result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
-                    raise RuntimeError(MOTION_VENDOR_ERROR)
+                        observed_count = self._joint_state_count
+                    if not self._controller_failure_matches_joint_state_loss(observed_count):
+                        raise RuntimeError(MOTION_VENDOR_ERROR)
 
         goal_handle.succeed()
         result.success = True
@@ -416,6 +594,39 @@ class MotionRunnerNode(Node):
                 self._active_preview = False
                 self._stop_requested.clear()
         return result
+
+    def _send_controller_trajectory(self, trajectory: JointTrajectory) -> int:
+        controller_goal = FollowJointTrajectory.Goal()
+        controller_goal.trajectory = trajectory
+        self._controller_done.clear()
+        controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
+        if not controller_handle.accepted:
+            self._controller_done.set()
+            with self._state_lock:
+                self._active_controller_handle = None
+                unavailable = not self._joint_states_available
+            if unavailable:
+                return FollowJointTrajectory.Result.INVALID_GOAL
+            raise RuntimeError(MOTION_VENDOR_ERROR)
+        with self._state_lock:
+            self._active_controller_handle = controller_handle
+        controller_result = wait_future(controller_handle.get_result_async()).result
+        with self._state_lock:
+            self._active_controller_handle = None
+        self._controller_done.set()
+        return controller_result.error_code
+
+    def _controller_failure_matches_joint_state_loss(self, observed_count: int) -> bool:
+        # A vendor abort is retried only when the physical joint-state stream also goes silent.
+        deadline_s = monotonic() + JOINT_STATE_SILENCE_S
+        with self._joint_state_condition:
+            while self._joint_states_available and monotonic() < deadline_s:
+                if self._joint_state_count > observed_count:
+                    return False
+                self._joint_state_condition.wait(
+                    max(min(JOINT_STATE_MONITOR_PERIOD_S, deadline_s - monotonic()), 0.0)
+                )
+            return not self._joint_states_available
 
     def _publish_preview_playback(self, goal_handle, trajectories: list[tuple[str, JointTrajectory]]) -> bool:
         for segment_name, trajectory in trajectories:
@@ -465,6 +676,7 @@ class MotionRunnerNode(Node):
 
         feedback.phase = "retract"
         goal_handle.publish_feedback(feedback)
+        self._wait_for_vendor_joint_state(goal_handle, "stop")
         for trajectory in self._compute_recovery_trajectory():
             controller_goal = FollowJointTrajectory.Goal()
             controller_goal.trajectory = trajectory

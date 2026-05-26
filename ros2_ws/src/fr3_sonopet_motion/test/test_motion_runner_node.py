@@ -8,6 +8,7 @@ from std_msgs.msg import Header
 
 from fr3_sonopet_motion.operator_policy import EXECUTE_TOKEN
 from fr3_sonopet_motion.motion_geometry import (
+    JOINT_NAMES,
     PREVIEW_JOINT_STATES_TOPIC,
     SEGMENT_SETTLING_TIME_S,
     build_cartesian_segments,
@@ -204,3 +205,138 @@ def test_preview_playback_joint_state_path_is_encoded():
     assert "if self._stop_requested.is_set():" in runner
     assert "preview_active = self._active_preview" in runner
     assert "Preview stopped by operator." in runner
+
+
+def test_vendor_joint_state_health_monitor_is_encoded():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "JOINT_STATE_SILENCE_S = 0.5" in runner
+    assert "JOINT_STATE_MONITOR_PERIOD_S = 0.1" in runner
+    assert 'WAITING_FOR_JOINT_STATES = "waiting_for_joint_states"' in runner
+    assert "self._joint_state_count = 0" in runner
+    assert "self._joint_state_received_s: float | None = None" in runner
+    assert "self._joint_states_available = False" in runner
+    assert "self._joint_state_condition = Condition(self._state_lock)" in runner
+    assert "self._recovery_active = False" in runner
+    assert "self._joint_state_monitor = self.create_timer(" in runner
+    assert "def _monitor_joint_states(self) -> None:" in runner
+    assert "monotonic() - self._joint_state_received_s <= JOINT_STATE_SILENCE_S" in runner
+    assert "self._start_vendor_recovery()" in runner
+
+
+def test_vendor_joint_state_silence_invalidates_stale_state_and_beginning_pose():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "self._latest_joint_state = None" in runner
+    assert "self._beginning_seed = None" in runner
+    assert "self._beginning_base_from_tcp = None" in runner
+    assert "self._beginning_link_from_tcp = None" in runner
+    assert "self._joint_states_available = False" in runner
+    assert "self._joint_states_lost = True" in runner
+    assert "Vendor joint states unavailable; waiting for robot mode recovery." in runner
+    assert "Vendor joint states recovered." in runner
+
+
+def test_active_franka_recovery_clients_and_constants_are_encoded():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "from action_msgs.msg import GoalStatus" in runner
+    assert "from controller_manager_msgs.srv import SetHardwareComponentState, SwitchController" in runner
+    assert "from franka_msgs.action import ErrorRecovery" in runner
+    assert "from lifecycle_msgs.msg import State" in runner
+    assert 'FRANKA_ERROR_RECOVERY_ACTION = "/action_server/error_recovery"' in runner
+    assert 'HARDWARE_STATE_SERVICE = "/controller_manager/set_hardware_component_state"' in runner
+    assert 'SWITCH_CONTROLLER_SERVICE = "/controller_manager/switch_controller"' in runner
+    assert 'FRANKA_HARDWARE_COMPONENT = "FrankaHardwareInterface"' in runner
+    assert '"franka_robot_state_broadcaster"' in runner
+    assert '"joint_state_broadcaster"' in runner
+    assert '"fr3_arm_controller"' in runner
+    assert "self._franka_recovery_client = ActionClient(" in runner
+    assert "self._hardware_state_client = self.create_client(" in runner
+    assert "self._switch_controller_client = self.create_client(" in runner
+
+
+def test_active_franka_recovery_sequence_is_encoded():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def _start_vendor_recovery(self) -> None:" in runner
+    assert "Thread(target=self._run_vendor_recovery, daemon=True).start()" in runner
+    assert "def _run_vendor_recovery(self) -> None:" in runner
+    assert "self._recover_vendor_stack_once()" in runner
+    assert "def _recover_vendor_stack_once(self) -> None:" in runner
+    assert "self._send_franka_error_recovery()" in runner
+    assert "self._activate_franka_hardware()" in runner
+    assert "self._activate_franka_controllers()" in runner
+    assert "ErrorRecovery.Goal()" in runner
+    assert "GoalStatus.STATUS_SUCCEEDED" in runner
+    assert "State(id=State.PRIMARY_STATE_ACTIVE, label=\"active\")" in runner
+    assert "request.activate_controllers = list(FRANKA_RECOVERY_CONTROLLERS)" in runner
+    assert "request.strictness = SwitchController.Request.STRICT" in runner
+    assert "request.activate_asap = True" in runner
+
+
+def test_motion_package_declares_active_recovery_dependencies():
+    package_root = Path(__file__).resolve().parents[1]
+    package_xml = (package_root / "package.xml").read_text(encoding="utf-8")
+
+    assert "<exec_depend>action_msgs</exec_depend>" in package_xml
+    assert "<exec_depend>controller_manager_msgs</exec_depend>" in package_xml
+    assert "<exec_depend>franka_msgs</exec_depend>" in package_xml
+    assert "<exec_depend>lifecycle_msgs</exec_depend>" in package_xml
+
+
+def test_motion_actions_wait_for_fresh_vendor_joint_states():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def _wait_for_vendor_joint_state(self, goal_handle, feedback_kind: str)" in runner
+    assert "PreviewMotion.Feedback(phase=WAITING_FOR_JOINT_STATES)" in runner
+    assert "ExecuteMotion.Feedback(active_segment=WAITING_FOR_JOINT_STATES)" in runner
+    assert "StopMotion.Feedback(phase=WAITING_FOR_JOINT_STATES)" in runner
+    assert 'self._wait_for_vendor_joint_state(goal_handle, "stop")' in runner
+    assert '"execute" if execute else "preview"' in runner
+    assert "Motion stopped while waiting for vendor joint states." in runner
+
+
+def test_controller_retry_waits_for_vendor_joint_state_recovery():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "while True:" in runner
+    assert 'self._wait_for_vendor_joint_state(goal_handle, "execute")' in runner
+    assert "controller_result = self._send_controller_trajectory(trajectory)" in runner
+    assert "observed_count = self._joint_state_count" in runner
+    assert "if not self._controller_failure_matches_joint_state_loss(observed_count):" in runner
+    assert "raise RuntimeError(MOTION_VENDOR_ERROR)" in runner
+    assert "def _send_controller_trajectory(self, trajectory: JointTrajectory) -> int:" in runner
+    assert "return controller_result.error_code" in runner
+    assert "def _controller_failure_matches_joint_state_loss(self, observed_count: int) -> bool:" in runner
+    assert "return not self._joint_states_available" in runner
+
+
+def test_joint_names_remain_fr3_vendor_joint_state_names():
+    assert JOINT_NAMES == (
+        "fr3_joint1",
+        "fr3_joint2",
+        "fr3_joint3",
+        "fr3_joint4",
+        "fr3_joint5",
+        "fr3_joint6",
+        "fr3_joint7",
+    )

@@ -88,7 +88,9 @@ ros2 pkg list | grep fr3_sonopet
 
 Expected: `fr3_sonopet_bringup`, `fr3_sonopet_description`, `fr3_sonopet_interfaces`, `fr3_sonopet_microphone`, `fr3_sonopet_motion`, `fr3_sonopet_recording`, `fr3_sonopet_supervisor`, `fr3_sonopet_tests`, `fr3_sonopet_trajectory`.
 
-After you change only the high-iteration experiment Python packages, **a faster rebuild**:
+After you change only the high-iteration experiment Python packages, **a fassource scripts/source_ubuntu24_ros_[jazzy.sh](http://jazzy.sh)**
+
+**ros2 launch fr3_sonopet_bringup [experiment.launch.py](http://experiment.launch.py) rviz:=trueter rebuild**:
 
 ```bash
 source ./scripts/source_ubuntu24_ros_jazzy.sh
@@ -100,8 +102,6 @@ cd ..
 `--symlink-install` means Python edits are picked up without rebuilding when you only change `.py` files.
 
 If you modified project packages **other than** trajectory, recording, or microphone, set the packages in the rebuild.
-
-
 
 ---
 

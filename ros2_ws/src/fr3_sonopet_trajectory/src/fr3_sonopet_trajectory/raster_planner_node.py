@@ -16,7 +16,10 @@ from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
 from fr3_sonopet_trajectory.raster_pattern import RasterSpec
-from fr3_sonopet_trajectory.raster_plan_builder import RasterBuild, build_raster_from_cloud
+from fr3_sonopet_trajectory.raster_plan_builder import (
+    RasterBuild,
+    build_raster_with_mean_surface_z,
+)
 
 
 class RasterPlannerNode(Node):
@@ -53,6 +56,7 @@ class RasterPlannerNode(Node):
         )
 
         self._planning_cloud_points: np.ndarray | None = None
+        self._selected_center_base: np.ndarray | None = None
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -128,40 +132,48 @@ class RasterPlannerNode(Node):
 
     def _on_clicked_point(self, point_msg: PointStamped) -> None:
         # RViz point publication is the operator-facing trigger for immediate planning.
-        selected_base = self._transform_point(
+        self._selected_center_base = self._transform_point(
             _point_to_array(point_msg.point),
             point_msg.header.frame_id,
             self._target_frame,
         )
         try:
-            self._build_publish_plan(selected_base)
-        except ValueError as exc:
+            self._build_publish_plan()
+        except (RuntimeError, ValueError) as exc:
             self.get_logger().warning(f"Ignored clicked point: {exc}")
 
     def _execute_build_plan(self, goal_handle):
-        # The action path keeps scripted planning available with target-frame centers.
+        # The action path either updates the stored center or reuses it for re-sampling.
         feedback = BuildRasterPlan.Feedback()
         feedback.phase = "building_raster_from_latest_cloud"
         goal_handle.publish_feedback(feedback)
 
         result = BuildRasterPlan.Result()
-        selected_target = _point_to_array(goal_handle.request.selected_center)
-        plan = self._build_publish_plan(selected_target)
-        goal_handle.succeed()
-        result.success = True
-        result.message = f"Published {len(plan.poses.poses)} raster poses."
-        result.plan = plan
+        if goal_handle.request.update_selected_center:
+            self._selected_center_base = _point_to_array(goal_handle.request.selected_center)
+        try:
+            plan = self._build_publish_plan()
+            goal_handle.succeed()
+            result.success = True
+            result.message = f"Published {len(plan.poses.poses)} raster poses."
+            result.plan = plan
+        except (RuntimeError, ValueError) as exc:
+            goal_handle.abort()
+            result.success = False
+            result.message = str(exc)
         return result
 
-    def _build_publish_plan(self, selected_base: np.ndarray) -> RasterPlan:
+    def _build_publish_plan(self) -> RasterPlan:
         # Geometry is computed and emitted in the robot base frame.
         cloud_points = self._require_cloud_points()
-        target_build = build_raster_from_cloud(
+        selected_base = self._require_selected_center()
+        target_build = build_raster_with_mean_surface_z(
             cloud_points,
             selected_base,
             self._spec,
             pre_filtered=True,
         )
+        self._selected_center_base = target_build.center.copy()
 
         header = Header()
         header.stamp = self.get_clock().now().to_msg()
@@ -172,6 +184,11 @@ class RasterPlannerNode(Node):
         self._markers_pub.publish(self._make_markers(header, target_build))
         self.get_logger().info(f"Published raster plan with {len(plan.poses.poses)} poses")
         return plan
+
+    def _require_selected_center(self) -> np.ndarray:
+        if self._selected_center_base is None:
+            raise RuntimeError(f"No raster center has been received from {self._clicked_topic}")
+        return self._selected_center_base
 
     def _require_cloud_points(self) -> np.ndarray:
         if self._planning_cloud_points is None:

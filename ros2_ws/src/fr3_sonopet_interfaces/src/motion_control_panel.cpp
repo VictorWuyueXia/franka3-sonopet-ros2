@@ -18,6 +18,7 @@
 #include <rviz_common/ros_integration/ros_node_abstraction_iface.hpp>
 
 #include "fr3_sonopet_interfaces/action/execute_motion.hpp"
+#include "fr3_sonopet_interfaces/action/build_raster_plan.hpp"
 #include "fr3_sonopet_interfaces/action/capture_point_cloud.hpp"
 #include "fr3_sonopet_interfaces/action/preview_motion.hpp"
 #include "fr3_sonopet_interfaces/action/stop_motion.hpp"
@@ -39,6 +40,7 @@ public:
     execute_button_ = new QPushButton("Execute", this);
     stop_button_ = new QPushButton("Stop Motion", this);
     rescan_button_ = new QPushButton("Rescan Cloud", this);
+    resample_raster_button_ = new QPushButton("Re-sample Raster", this);
     save_artifacts_ = new QCheckBox("Save artifacts at session end", this);
     confirmation_ = new QLineEdit(this);
     status_ = new QLabel("Waiting for RViz node.", this);
@@ -49,6 +51,7 @@ public:
     execute_button_->setEnabled(false);
     stop_button_->setEnabled(false);
     rescan_button_->setEnabled(false);
+    resample_raster_button_->setEnabled(false);
     save_artifacts_->setEnabled(false);
     motion_row->addWidget(preview_button_);
     motion_row->addWidget(new QLabel("Confirm:", this));
@@ -56,6 +59,7 @@ public:
     motion_row->addWidget(execute_button_);
     motion_row->addWidget(stop_button_);
     operator_row->addWidget(rescan_button_);
+    operator_row->addWidget(resample_raster_button_);
     operator_row->addWidget(save_artifacts_);
     layout->addLayout(operator_row);
     layout->addLayout(motion_row);
@@ -131,6 +135,23 @@ public:
       };
       capture_client_->async_send_goal(goal, options);
     });
+    connect(resample_raster_button_, &QPushButton::clicked, this, [this]() {
+      BuildRasterPlan::Goal goal;
+      goal.update_selected_center = false;
+      rclcpp_action::Client<BuildRasterPlan>::SendGoalOptions options;
+      status_->setText("Raster re-sample requested.");
+      options.goal_response_callback = [this](auto goal_handle) {
+        status_->setText(
+          goal_handle ? "Raster re-sample accepted." : "Raster re-sample rejected.");
+      };
+      options.feedback_callback = [this](auto, const auto feedback) {
+        status_->setText(QString::fromStdString("Re-sampling raster: " + feedback->phase));
+      };
+      options.result_callback = [this](const auto & wrapped_result) {
+        status_->setText(QString::fromStdString(wrapped_result.result->message));
+      };
+      build_raster_client_->async_send_goal(goal, options);
+    });
     connect(save_artifacts_, &QCheckBox::stateChanged, this, [this](int state) {
       auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
       request->data = state == Qt::Checked;
@@ -157,12 +178,16 @@ public:
     capture_client_ = rclcpp_action::create_client<CapturePointCloud>(
       rviz_node,
       "/sonopet/capture_pointcloud");
+    build_raster_client_ = rclcpp_action::create_client<BuildRasterPlan>(
+      rviz_node,
+      "/sonopet/build_raster_plan");
     artifact_saving_client_ = rviz_node->create_client<std_srvs::srv::SetBool>(
       "/sonopet/set_artifact_saving");
     preview_button_->setEnabled(true);
     execute_button_->setEnabled(true);
     stop_button_->setEnabled(true);
     rescan_button_->setEnabled(true);
+    resample_raster_button_->setEnabled(true);
     save_artifacts_->setEnabled(true);
     status_->setText("Motion controls ready.");
   }
@@ -170,6 +195,7 @@ public:
 private:
   using PreviewMotion = fr3_sonopet_interfaces::action::PreviewMotion;
   using ExecuteMotion = fr3_sonopet_interfaces::action::ExecuteMotion;
+  using BuildRasterPlan = fr3_sonopet_interfaces::action::BuildRasterPlan;
   using StopMotion = fr3_sonopet_interfaces::action::StopMotion;
   using CapturePointCloud = fr3_sonopet_interfaces::action::CapturePointCloud;
 
@@ -191,6 +217,7 @@ private:
   QPushButton * execute_button_;
   QPushButton * stop_button_;
   QPushButton * rescan_button_;
+  QPushButton * resample_raster_button_;
   QCheckBox * save_artifacts_;
   QLineEdit * confirmation_;
   QLabel * status_;
@@ -198,6 +225,7 @@ private:
   rclcpp_action::Client<ExecuteMotion>::SharedPtr execute_client_;
   rclcpp_action::Client<StopMotion>::SharedPtr stop_client_;
   rclcpp_action::Client<CapturePointCloud>::SharedPtr capture_client_;
+  rclcpp_action::Client<BuildRasterPlan>::SharedPtr build_raster_client_;
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr artifact_saving_client_;
 };
 

@@ -145,3 +145,7 @@ def test_motion_panel_plugin_is_exported_from_interfaces_package():
     assert "Franka Robot" in panel
     assert "Sonopet Tool" in panel
     assert 'name == "TF"' in panel
+    assert "Re-sample Raster" in panel
+    assert "BuildRasterPlan" in panel
+    assert "/sonopet/build_raster_plan" in panel
+    assert "goal.update_selected_center = false" in panel

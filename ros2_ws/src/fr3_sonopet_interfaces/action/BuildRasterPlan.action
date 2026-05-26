@@ -1,8 +1,8 @@
 # Cartesian center selected by the operator or perception system.
 geometry_msgs/Point selected_center
 
-# Named source of the point cloud used to estimate the local tissue surface.
-string cloud_source
+# True when selected_center should replace the trajectory node's stored center.
+bool update_selected_center
 
 ---
 # True when a geometrically valid raster plan was generated.

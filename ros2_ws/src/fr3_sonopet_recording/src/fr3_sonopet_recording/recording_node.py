@@ -256,9 +256,13 @@ class RecordingNode(Node):
             received = Event()
             cloud: dict[str, PointCloud2] = {}
 
-            def _on_cloud(msg: PointCloud2) -> None:
-                cloud["msg"] = msg
-                received.set()
+            def _on_cloud(
+                msg: PointCloud2,
+                cloud_buffer: dict[str, PointCloud2] = cloud,
+                received_event: Event = received,
+            ) -> None:
+                cloud_buffer["msg"] = msg
+                received_event.set()
 
             subscription = self.create_subscription(
                 PointCloud2,
@@ -309,7 +313,9 @@ class RecordingNode(Node):
         audio_dir.mkdir(parents=True, exist_ok=True)
 
         for scan in self._session.scans:
-            scan_path = _camera_dir(self._session.artifact_path, scan.camera_key) / f"{scan.label}.pcd"
+            scan_path = (
+                _camera_dir(self._session.artifact_path, scan.camera_key) / f"{scan.label}.pcd"
+            )
             scan.artifact_path = scan_path
             write_pointcloud_pcd(scan_path, scan.cloud)
 
@@ -436,7 +442,10 @@ def main() -> None:
     node = RecordingNode()
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
-    executor.spin()
-    executor.remove_node(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        executor.spin()
+    finally:
+        executor.remove_node(node)
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()

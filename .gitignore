@@ -31,6 +31,7 @@ ros2_ws/src/realsense-ros/
 
 # Experiment outputs and recorded data
 artifacts/
+Python_SonoDAQ/run_outputs/
 *.bag/
 *.db3
 *.mcap
