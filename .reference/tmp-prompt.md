@@ -143,11 +143,13 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 + visualize preview trajectory in RViz
 
 + re-try getting joint states when switched to programming mode
-+ re-select last X-Y, find new Z
+
+= re-select last X-Y, find new Z
+= dig-in distance in raster patch (0-2mm)
+= stop motion adhere to speed limit
+= save config, time format, save at start&end of raster, only start and end timestamp
 
 - run alias
-- save config, time format, save at start&end of raster, only start and end timestamp
-- stop motion adhere to speed limit
-- dig-in distance in raster patch (0-2mm)
+- sonopet built in
 - IK then FK to check accuracy by supervisor
 - what happens if I publish another point while motion

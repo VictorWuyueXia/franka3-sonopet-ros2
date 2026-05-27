@@ -123,6 +123,9 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "Color Transformer: RGB8" in rviz
     assert "recording_topics.yaml" in recording_launch
     assert "cameras.yaml" in recording_launch
+    assert "bringup_config_dir" in recording_launch
+    assert "description_config_dir" in recording_launch
+    assert "fr3_sonopet_description" in recording_launch
     assert "microphone.yaml" in microphone_launch
 
 

@@ -31,14 +31,21 @@ def build_raster_from_cloud(
     spec: RasterSpec,
     *,
     pre_filtered: bool = False,
+    dig_depth_m: float = 0.0,
 ) -> RasterBuild:
     """Build a base-frame Cartesian raster patch from a selected D405 cloud point."""
+    if dig_depth_m < 0.0:
+        raise ValueError("dig_depth_m must be non-negative")
     planning_points = cloud_points if pre_filtered else filter_planning_cloud(cloud_points)
     patch_points = crop_local_patch(planning_points, selected_center_base, spec.square_side_m)
     frame = fit_surface_frame(patch_points, selected_center_base)
 
     # Raster points follow interpolated surface height; normals remain reference metadata.
     raster = build_surface_raster(patch_points, frame, spec)
+    raster_points = raster.points.copy()
+    raster_points[:, 2] -= dig_depth_m
+    center = frame.center.copy()
+    center[2] -= dig_depth_m
     normals = estimate_local_normals(
         patch_points,
         raster.normal_reference_points,
@@ -48,45 +55,58 @@ def build_raster_from_cloud(
     quaternion = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
     quaternions = np.repeat(quaternion[None, :], raster.points.shape[0], axis=0)
     return RasterBuild(
-        center=frame.center,
-        points=raster.points,
+        center=center,
+        points=raster_points,
         normals=normals,
         quaternions_xyzw=quaternions,
         frame=frame,
         segment_names=raster.segment_names,
-        config_hash=config_hash(spec),
+        config_hash=config_hash(spec, dig_depth_m),
     )
 
 
-def build_raster_with_mean_surface_z(
+def _resample_raster(
     cloud_points: np.ndarray,
     selected_center_base: np.ndarray,
     spec: RasterSpec,
     *,
     pre_filtered: bool = False,
+    dig_depth_m: float = 0.0,
 ) -> RasterBuild:
-    """Update the stored center height from raster samples before final generation."""
-    trajectory = build_raster_from_cloud(
-        cloud_points,
-        selected_center_base,
-        spec,
-        pre_filtered=pre_filtered,
-    )
-    raster_mask = np.asarray(
-        [segment_name != "retract" for segment_name in trajectory.segment_names],
-        dtype=bool,
-    )
-    if not bool(np.any(raster_mask)):
-        raise ValueError("Raster generation produced no non-retract waypoints")
+    """Reuse selected X-Y, estimate new Z, then rebuild waypoints from the latest cloud."""
+    planning_points = cloud_points if pre_filtered else filter_planning_cloud(cloud_points)
     updated_center = np.asarray(selected_center_base, dtype=np.float64).copy()
-    updated_center[2] = float(np.mean(trajectory.points[raster_mask, 2]))
-    return trajectory
+    search_radius_m = spec.square_side_m / 2.0
+
+    points = np.asarray(planning_points, dtype=np.float64)
+
+    distances = np.linalg.norm(finite_points[:, :2] - updated_center[None, :2], axis=1)
+    support_mask = distances <= search_radius_m
+    if not bool(np.any(support_mask)):
+        raise ValueError("No point-cloud points found near selected center XY")
+
+    # Find the nearest 8 points and use their weighted average to update the center Z
+    support_distances = distances[support_mask]
+    support_z = finite_points[support_mask, 2]
+    nearest_count = min(8, support_z.shape[0])
+    nearest = np.argpartition(support_distances, nearest_count - 1)[:nearest_count]
+    nearest_distances = support_distances[nearest]
+    weights = 1.0 / np.maximum(nearest_distances, 1e-12) ** 2
+    updated_center[2] = float(np.sum(weights * support_z[nearest]) / np.sum(weights))
+
+    return build_raster_from_cloud(
+        finite_points,
+        updated_center,
+        spec,
+        pre_filtered=True,
+        dig_depth_m=dig_depth_m,
+    )
 
 
-def config_hash(spec: RasterSpec) -> str:
+def config_hash(spec: RasterSpec, dig_depth_m: float = 0.0) -> str:
     """Hash the numerical raster policy into a compact plan identity string."""
     payload = (
         f"{spec.square_side_m:.9f}|{spec.line_spacing_m:.9f}|"
-        f"{spec.downsample_rate}|{spec.pattern}"
+        f"{spec.downsample_rate}|{spec.pattern}|{dig_depth_m:.9f}"
     )
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]

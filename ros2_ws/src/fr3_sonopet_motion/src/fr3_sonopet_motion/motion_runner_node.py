@@ -23,6 +23,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 from trajectory_msgs.msg import JointTrajectory
 from tf2_ros import Buffer, TransformListener
 
@@ -57,6 +58,7 @@ FRANKA_ERROR_RECOVERY_ACTION = "/action_server/error_recovery"
 HARDWARE_STATE_SERVICE = "/controller_manager/set_hardware_component_state"
 SWITCH_CONTROLLER_SERVICE = "/controller_manager/switch_controller"
 FRANKA_HARDWARE_COMPONENT = "FrankaHardwareInterface"
+CUTTING_TOPIC = "/sonopet/cutting"
 FRANKA_RECOVERY_CONTROLLERS = (
     "franka_robot_state_broadcaster",
     "joint_state_broadcaster",
@@ -100,6 +102,7 @@ class MotionRunnerNode(Node):
             PREVIEW_JOINT_STATES_TOPIC,
             10,
         )
+        self._cutting_pub = self.create_publisher(Bool, CUTTING_TOPIC, 10)
         self._plan_sub = self.create_subscription(
             RasterPlan,
             RASTER_PLAN_TOPIC,
@@ -541,43 +544,54 @@ class MotionRunnerNode(Node):
                 return result
 
         if execute:
-            for segment_name, trajectory in trajectories:
-                if self._stop_requested.is_set():
-                    with self._state_lock:
-                        self._active_execute = False
-                    goal_handle.abort()
-                    result.success = False
-                    result.message = "Execution stopped by operator; recovery is handled by the stop action."
-                    return result
-                feedback = ExecuteMotion.Feedback()
-                feedback.active_segment = segment_name
-                goal_handle.publish_feedback(feedback)
-                while True:
-                    if self._wait_for_vendor_joint_state(goal_handle, "execute") is None:
-                        with self._state_lock:
-                            self._active_execute = False
-                        goal_handle.abort()
-                        result.success = False
-                        result.message = (
-                            "Execution stopped by operator; recovery is handled by the stop action."
-                        )
-                        return result
-                    controller_result = self._send_controller_trajectory(trajectory)
+            cutting_active = False
+            try:
+                for segment_name, trajectory in trajectories:
                     if self._stop_requested.is_set():
                         with self._state_lock:
                             self._active_execute = False
                         goal_handle.abort()
                         result.success = False
-                        result.message = (
-                            "Execution stopped by operator; recovery is handled by the stop action."
-                        )
+                        result.message = "Execution stopped by operator; recovery is handled by the stop action."
                         return result
-                    if controller_result == FollowJointTrajectory.Result.SUCCESSFUL:
-                        break
-                    with self._state_lock:
-                        observed_count = self._joint_state_count
-                    if not self._controller_failure_matches_joint_state_loss(observed_count):
-                        raise RuntimeError(MOTION_VENDOR_ERROR)
+                    feedback = ExecuteMotion.Feedback()
+                    feedback.active_segment = segment_name
+                    goal_handle.publish_feedback(feedback)
+                    if segment_name == "raster":
+                        self._publish_cutting(True)
+                        cutting_active = True
+                    while True:
+                        if self._wait_for_vendor_joint_state(goal_handle, "execute") is None:
+                            with self._state_lock:
+                                self._active_execute = False
+                            goal_handle.abort()
+                            result.success = False
+                            result.message = (
+                                "Execution stopped by operator; recovery is handled by the stop action."
+                            )
+                            return result
+                        controller_result = self._send_controller_trajectory(trajectory)
+                        if self._stop_requested.is_set():
+                            with self._state_lock:
+                                self._active_execute = False
+                            goal_handle.abort()
+                            result.success = False
+                            result.message = (
+                                "Execution stopped by operator; recovery is handled by the stop action."
+                            )
+                            return result
+                        if controller_result == FollowJointTrajectory.Result.SUCCESSFUL:
+                            break
+                        with self._state_lock:
+                            observed_count = self._joint_state_count
+                        if not self._controller_failure_matches_joint_state_loss(observed_count):
+                            raise RuntimeError(MOTION_VENDOR_ERROR)
+                    if segment_name == "raster":
+                        self._publish_cutting(False)
+                        cutting_active = False
+            finally:
+                if cutting_active:
+                    self._publish_cutting(False)
 
         goal_handle.succeed()
         result.success = True
@@ -594,6 +608,9 @@ class MotionRunnerNode(Node):
                 self._active_preview = False
                 self._stop_requested.clear()
         return result
+
+    def _publish_cutting(self, enabled: bool) -> None:
+        self._cutting_pub.publish(Bool(data=enabled))
 
     def _send_controller_trajectory(self, trajectory: JointTrajectory) -> int:
         controller_goal = FollowJointTrajectory.Goal()
@@ -696,12 +713,18 @@ class MotionRunnerNode(Node):
         return result
 
     def _compute_recovery_trajectory(self) -> list[JointTrajectory]:
-        if self._latest_joint_state is None or self._beginning_seed is None or self._beginning_link_from_tcp is None:
+        if (
+            self._latest_joint_state is None
+            or self._beginning_seed is None
+            or self._beginning_base_from_tcp is None
+            or self._beginning_link_from_tcp is None
+        ):
             raise RuntimeError(MOTION_INPUT_ERROR)
         self._ik_client.wait_for_service()
         self._controller_client.wait_for_server()
         current_seed = dict(zip(self._latest_joint_state.name, self._latest_joint_state.position, strict=True))
         seed = {name: float(current_seed[name]) for name in JOINT_NAMES}
+        motion_speed_m_s = float(self.get_parameter("motion_speed_m_s").value)
         base_from_tcp_msg = self._tf_buffer.lookup_transform(BASE_FRAME, TOOL_FRAME, Time()).transform
         base_from_tcp = np.eye(4, dtype=np.float64)
         base_from_tcp[:3, :3] = rotation_matrix_from_quaternion(
@@ -758,14 +781,17 @@ class MotionRunnerNode(Node):
         retract_trajectory.points = joint_trajectory_points(
             solved_points,
             densified_matrices([base_from_tcp, retract]),
-            float(self.get_parameter("motion_speed_m_s").value),
+            motion_speed_m_s,
+        )
+        return_distance_m = float(
+            np.linalg.norm(retract[:3, 3] - self._beginning_base_from_tcp[:3, 3])
         )
         return_trajectory = JointTrajectory()
         return_trajectory.joint_names = list(JOINT_NAMES)
         return_trajectory.points = joint_interpolation_points(
             seed,
             self._beginning_seed,
-            max(float(np.linalg.norm(retract[:3, 3] - base_from_tcp[:3, 3])) / float(self.get_parameter("motion_speed_m_s").value), 0.05),
+            max(return_distance_m / motion_speed_m_s, 0.05),
         )
         return [retract_trajectory, return_trajectory]
 

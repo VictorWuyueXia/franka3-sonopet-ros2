@@ -4,6 +4,9 @@ geometry_msgs/Point selected_center
 # True when selected_center should replace the trajectory node's stored center.
 bool update_selected_center
 
+# Positive values offset generated raster waypoints downward along base Z.
+float64 dig_depth_mm
+
 ---
 # True when a geometrically valid raster plan was generated.
 bool success

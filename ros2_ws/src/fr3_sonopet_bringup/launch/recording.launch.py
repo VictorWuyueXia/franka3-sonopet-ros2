@@ -11,6 +11,12 @@ def generate_launch_description():
     camera_config = PathJoinSubstitution(
         [FindPackageShare("fr3_sonopet_bringup"), "config", "cameras.yaml"]
     )
+    bringup_config_dir = PathJoinSubstitution(
+        [FindPackageShare("fr3_sonopet_bringup"), "config"]
+    )
+    description_config_dir = PathJoinSubstitution(
+        [FindPackageShare("fr3_sonopet_description"), "config"]
+    )
     return LaunchDescription(
         [
             Node(
@@ -22,6 +28,8 @@ def generate_launch_description():
                     {
                         "recording_config": recording_config,
                         "camera_config": camera_config,
+                        "bringup_config_dir": bringup_config_dir,
+                        "description_config_dir": description_config_dir,
                     }
                 ],
             ),

@@ -297,6 +297,19 @@ def test_motion_package_declares_active_recovery_dependencies():
     assert "<exec_depend>lifecycle_msgs</exec_depend>" in package_xml
 
 
+def test_stop_recovery_return_timing_uses_beginning_pose_distance():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "or self._beginning_base_from_tcp is None" in runner
+    assert 'motion_speed_m_s = float(self.get_parameter("motion_speed_m_s").value)' in runner
+    assert "return_distance_m = float(" in runner
+    assert "retract[:3, 3] - self._beginning_base_from_tcp[:3, 3]" in runner
+    assert "max(return_distance_m / motion_speed_m_s, 0.05)" in runner
+
+
 def test_motion_actions_wait_for_fresh_vendor_joint_states():
     package_root = Path(__file__).resolve().parents[1]
     runner = (
@@ -340,3 +353,22 @@ def test_joint_names_remain_fr3_vendor_joint_state_names():
         "fr3_joint6",
         "fr3_joint7",
     )
+
+
+def test_cutting_trigger_is_encoded_for_raster_execution_only():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "from std_msgs.msg import Bool" in runner
+    assert 'CUTTING_TOPIC = "/sonopet/cutting"' in runner
+    assert "self._cutting_pub = self.create_publisher(Bool, CUTTING_TOPIC, 10)" in runner
+    assert "def _publish_cutting(self, enabled: bool) -> None:" in runner
+    assert "self._cutting_pub.publish(Bool(data=enabled))" in runner
+    assert 'if segment_name == "raster":' in runner
+    assert "self._publish_cutting(True)" in runner
+    assert "self._publish_cutting(False)" in runner
+    assert "finally:" in runner
+    assert "if cutting_active:" in runner
+    assert "self._publish_preview_playback(goal_handle, trajectories)" in runner

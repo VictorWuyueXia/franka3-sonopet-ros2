@@ -46,7 +46,7 @@ def test_pointcloud_snapshot_disables_after_failure(tmp_path):
     assert "no pointcloud" in result.error
 
 
-def test_recording_node_exposes_unified_capture_and_artifact_discard():
+def test_recording_node_exposes_cutting_workflow_and_artifact_discard():
     package_root = Path(__file__).resolve().parents[1]
     node_source = (
         package_root / "src" / "fr3_sonopet_recording" / "recording_node.py"
@@ -55,9 +55,42 @@ def test_recording_node_exposes_unified_capture_and_artifact_discard():
     assert "/sonopet/capture_pointcloud" in node_source
     assert "/sonopet/captured_planning_cloud" in node_source
     assert "/sonopet/set_artifact_saving" in node_source
-    assert "def _runtime(self) -> None:" in node_source
-    assert "def _capture_pointcloud(" in node_source
-    assert "def _save_artifacts(self) -> None:" in node_source
-    assert "scans: list[PointCloudScan]" in node_source
+    assert "/sonopet/cutting" in node_source
+    assert "class ActiveRecordingRun" in node_source
+    assert "def _prepare_experiment_folder(self) -> None:" in node_source
+    assert "def _copy_config_artifacts(self) -> None:" in node_source
+    assert "def _on_cutting_flag(self, msg: Bool) -> None:" in node_source
+    assert "def _start_recording_run(self) -> None:" in node_source
+    assert "def _write_rgb_frame(self, camera_key: str, msg: Image) -> None:" in node_source
+    assert "def _write_audio_packet(self, msg: AudioChunk) -> None:" in node_source
+    assert "def _stop_recording_run(self) -> None:" in node_source
+    assert "def _next_existing_name(self, path: Path) -> Path:" in node_source
+    assert "def _discard_experiment_folder(self) -> None:" in node_source
+    assert "if self._active_run is None:" in node_source
+    assert "shutil.rmtree(self._artifact_path)" in node_source
+    assert "rgb_timestamps.csv" not in node_source
     assert "RgbVideoRecorder" not in node_source
     assert "AudioWavRecorder" not in node_source
+
+
+def test_recording_node_metadata_and_naming_policy_are_encoded():
+    package_root = Path(__file__).resolve().parents[1]
+    node_source = (
+        package_root / "src" / "fr3_sonopet_recording" / "recording_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "%Y-%m-%d:%H-%M-%S" in node_source
+    assert "centiseconds // 10" in node_source
+    assert "centiseconds % 10" in node_source
+    assert 'path.with_name(f"{path.stem}_{index}{path.suffix}")' in node_source
+    assert "camera_in_hand" in node_source
+    assert "camera_fixed" in node_source
+    assert "rgb.avi" in node_source
+    assert "audio.wav" in node_source
+    assert "audio_meta.json" in node_source
+    assert "manifest.json" in node_source
+    assert "started_at" in node_source
+    assert "stopped_at" in node_source
+    assert "frame_rate" in node_source
+    assert "sample_rate_hz" in node_source
+    assert "config" in node_source and "bringup" in node_source and "description" in node_source

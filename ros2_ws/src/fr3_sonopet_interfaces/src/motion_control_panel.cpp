@@ -3,6 +3,7 @@
 
 #include <QHBoxLayout>
 #include <QCheckBox>
+#include <QDoubleValidator>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -41,17 +42,24 @@ public:
     stop_button_ = new QPushButton("Stop Motion", this);
     rescan_button_ = new QPushButton("Rescan Cloud", this);
     resample_raster_button_ = new QPushButton("Re-sample Raster", this);
+    dig_depth_mm_ = new QLineEdit(this);
     save_artifacts_ = new QCheckBox("Save artifacts at session end", this);
     confirmation_ = new QLineEdit(this);
     status_ = new QLabel("Waiting for RViz node.", this);
+    auto * dig_depth_validator = new QDoubleValidator(0.0, 1000.0, 3, dig_depth_mm_);
+    dig_depth_validator->setNotation(QDoubleValidator::StandardNotation);
     confirmation_->setMaxLength(1);
     confirmation_->setPlaceholderText("E");
+    dig_depth_mm_->setText("0");
+    dig_depth_mm_->setValidator(dig_depth_validator);
+    dig_depth_mm_->setMaximumWidth(64);
     save_artifacts_->setChecked(true);
     preview_button_->setEnabled(false);
     execute_button_->setEnabled(false);
     stop_button_->setEnabled(false);
     rescan_button_->setEnabled(false);
     resample_raster_button_->setEnabled(false);
+    dig_depth_mm_->setEnabled(false);
     save_artifacts_->setEnabled(false);
     motion_row->addWidget(preview_button_);
     motion_row->addWidget(new QLabel("Confirm:", this));
@@ -60,6 +68,8 @@ public:
     motion_row->addWidget(stop_button_);
     operator_row->addWidget(rescan_button_);
     operator_row->addWidget(resample_raster_button_);
+    operator_row->addWidget(dig_depth_mm_);
+    operator_row->addWidget(new QLabel("mm dig", this));
     operator_row->addWidget(save_artifacts_);
     layout->addLayout(operator_row);
     layout->addLayout(motion_row);
@@ -138,6 +148,7 @@ public:
     connect(resample_raster_button_, &QPushButton::clicked, this, [this]() {
       BuildRasterPlan::Goal goal;
       goal.update_selected_center = false;
+      goal.dig_depth_mm = dig_depth_mm_->text().toDouble();
       rclcpp_action::Client<BuildRasterPlan>::SendGoalOptions options;
       status_->setText("Raster re-sample requested.");
       options.goal_response_callback = [this](auto goal_handle) {
@@ -188,6 +199,7 @@ public:
     stop_button_->setEnabled(true);
     rescan_button_->setEnabled(true);
     resample_raster_button_->setEnabled(true);
+    dig_depth_mm_->setEnabled(true);
     save_artifacts_->setEnabled(true);
     status_->setText("Motion controls ready.");
   }
@@ -218,6 +230,7 @@ private:
   QPushButton * stop_button_;
   QPushButton * rescan_button_;
   QPushButton * resample_raster_button_;
+  QLineEdit * dig_depth_mm_;
   QCheckBox * save_artifacts_;
   QLineEdit * confirmation_;
   QLabel * status_;

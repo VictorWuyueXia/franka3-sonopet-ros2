@@ -9,4 +9,3 @@ raster:
   line_spacing_m: 0.002
   downsample_rate: 6
   pattern: unidirectional_retract
-  dig_depth_m: 0.003

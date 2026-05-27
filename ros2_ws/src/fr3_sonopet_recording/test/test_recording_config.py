@@ -36,8 +36,10 @@ pointcloud_snapshots:
 
     assert config.video_fps == 15.0
     assert config.snapshot_timeout_sec == 5.0
+    assert config.cutting_topic == "/sonopet/cutting"
     assert recording_topics(config) == (
         "/microphone/audio",
+        "/sonopet/cutting",
         "/RealSense_D405/in_hand/color/image_rect_raw",
         "/RealSense_D405/fixed/color/image_rect_raw",
     )

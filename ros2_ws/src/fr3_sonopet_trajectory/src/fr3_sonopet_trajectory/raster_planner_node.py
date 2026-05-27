@@ -18,7 +18,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from fr3_sonopet_trajectory.raster_pattern import RasterSpec
 from fr3_sonopet_trajectory.raster_plan_builder import (
     RasterBuild,
-    build_raster_with_mean_surface_z,
+    _resample_raster,
 )
 
 
@@ -152,7 +152,7 @@ class RasterPlannerNode(Node):
         if goal_handle.request.update_selected_center:
             self._selected_center_base = _point_to_array(goal_handle.request.selected_center)
         try:
-            plan = self._build_publish_plan()
+            plan = self._build_publish_plan(goal_handle.request.dig_depth_mm)
             goal_handle.succeed()
             result.success = True
             result.message = f"Published {len(plan.poses.poses)} raster poses."
@@ -163,15 +163,18 @@ class RasterPlannerNode(Node):
             result.message = str(exc)
         return result
 
-    def _build_publish_plan(self) -> RasterPlan:
+    def _build_publish_plan(self, dig_depth_mm: float = 0.0) -> RasterPlan:
         # Geometry is computed and emitted in the robot base frame.
+        if dig_depth_mm < 0.0:
+            raise ValueError("Dig depth must be non-negative")
         cloud_points = self._require_cloud_points()
         selected_base = self._require_selected_center()
-        target_build = build_raster_with_mean_surface_z(
+        target_build = _resample_raster(
             cloud_points,
             selected_base,
             self._spec,
             pre_filtered=True,
+            dig_depth_m=dig_depth_mm / 1000.0,
         )
         self._selected_center_base = target_build.center.copy()
 

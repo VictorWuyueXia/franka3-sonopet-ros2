@@ -19,6 +19,7 @@ class CameraRecordingSpec:
 class RecordingConfig:
     artifact_root: Path
     audio_topic: str
+    cutting_topic: str
     video_fps: float
     snapshot_timeout_sec: float
     cameras: tuple[CameraRecordingSpec, ...]
@@ -51,6 +52,7 @@ def load_recording_config(recording_path: str | Path, camera_path: str | Path) -
     return RecordingConfig(
         artifact_root=Path(str(recording["artifact_root"])),
         audio_topic=_require_absolute_topic(str(audio["topic"])),
+        cutting_topic="/sonopet/cutting",
         video_fps=float(camera_payload["realsense"]["fps"]),
         snapshot_timeout_sec=float(camera_payload["pointcloud_snapshots"]["timeout_sec"]),
         cameras=(
@@ -63,4 +65,4 @@ def load_recording_config(recording_path: str | Path, camera_path: str | Path) -
 def recording_topics(config: RecordingConfig) -> tuple[str, ...]:
     """Return continuously consumed topics for validation and launch-time diagnostics."""
 
-    return tuple([config.audio_topic, *(camera.rgb_topic for camera in config.cameras)])
+    return tuple([config.audio_topic, config.cutting_topic, *(camera.rgb_topic for camera in config.cameras)])

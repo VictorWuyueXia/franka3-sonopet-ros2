@@ -14,6 +14,6 @@ def test_raster_planner_accepts_each_recorder_captured_cloud():
     assert "/sonopet/captured_planning_cloud" in raster_config
     assert "if self._planning_cloud_points is not None:" not in planner_source
     assert "self._selected_center_base" in planner_source
-    assert "build_raster_with_mean_surface_z" in planner_source
+    assert "_resample_raster" in planner_source
     assert "goal_handle.request.update_selected_center" in planner_source
     assert "No raster center has been received from" in planner_source
