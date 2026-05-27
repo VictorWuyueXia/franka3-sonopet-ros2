@@ -267,12 +267,12 @@ ros2 action list -t | grep /sonopet/record_experiment
 ros2 interface show fr3_sonopet_interfaces/action/RecordExperiment
 ```
 
-**Start a run:**
+**Start a run** (optional; recording also arms from `/sonopet/cutting`):
 
 ```bash
 ros2 action send_goal /sonopet/record_experiment \
   fr3_sonopet_interfaces/action/RecordExperiment \
-  "{run_id: test_run_001, start: true}"
+  "{run_id: '', start: true}"
 ```
 
 **Stop the same run:**
@@ -280,10 +280,16 @@ ros2 action send_goal /sonopet/record_experiment \
 ```bash
 ros2 action send_goal /sonopet/record_experiment \
   fr3_sonopet_interfaces/action/RecordExperiment \
-  "{run_id: test_run_001, start: false}"
+  "{run_id: '', start: false}"
 ```
 
-After stopping, artifacts are written under `artifacts/experiments/<run_id>/`, including camera videos, audio, point-cloud snapshots when available, and `manifest.json`.
+Each stack launch creates one timestamped session folder, for example
+`ros2_ws/artifacts/experiments/20260527T131514/`. Artifacts include camera
+videos, audio, point-cloud snapshots when available, and `manifest.json`.
+Each cutting interval is tagged `run_1`, `run_2`, `run_3` in the manifest.
+`started_at` and `stopped_at` carry both Sonopet-style epoch seconds (for
+example `1779906518.007343`) and a compact local label (for example
+`202605271551`).
 
 ---
 

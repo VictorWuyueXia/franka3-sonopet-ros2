@@ -1,5 +1,4 @@
 recording:
-  artifact_root: artifacts/experiments
   audio:
     topic: /microphone/audio
   cameras:

@@ -5,7 +5,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from fr3_sonopet_trajectory.cloud_io import crop_local_patch, filter_planning_cloud
+from fr3_sonopet_trajectory.cloud_io import (
+    crop_local_patch,
+    filter_planning_cloud,
+    finite_xyz_array,
+)
 from fr3_sonopet_trajectory.raster_pattern import RasterSpec, build_surface_raster
 from fr3_sonopet_trajectory.surface_geometry import (
     SurfaceFrame,
@@ -78,7 +82,7 @@ def _resample_raster(
     updated_center = np.asarray(selected_center_base, dtype=np.float64).copy()
     search_radius_m = spec.square_side_m / 2.0
 
-    points = np.asarray(planning_points, dtype=np.float64)
+    finite_points = finite_xyz_array(planning_points)
 
     distances = np.linalg.norm(finite_points[:, :2] - updated_center[None, :2], axis=1)
     support_mask = distances <= search_radius_m

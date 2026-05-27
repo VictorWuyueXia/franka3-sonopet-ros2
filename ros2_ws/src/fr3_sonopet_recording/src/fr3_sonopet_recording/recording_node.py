@@ -4,9 +4,8 @@ import shutil
 import wave
 from array import array
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock
 
 import cv2
 import rclpy
@@ -26,7 +25,14 @@ from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
 from fr3_sonopet_recording.artifact_writers import write_json, write_pointcloud_pcd
-from fr3_sonopet_recording.recording_config import load_recording_config, recording_topics
+from fr3_sonopet_recording.recording_config import (
+    experiment_run_id,
+    load_recording_config,
+    local_timestamp_label,
+    recording_run_label,
+    recording_topics,
+    wall_clock_timestamp,
+)
 
 
 @dataclass
@@ -37,6 +43,7 @@ class PointCloudScan:
     camera_key: str
     cloud: PointCloud2
     point_count: int
+    timestamp: float
     artifact_path: Path = Path()
 
 
@@ -44,8 +51,9 @@ class PointCloudScan:
 class ActiveRecordingRun:
     """Open files for one cutting interval."""
 
+    label: str
     index: int
-    started_at: str
+    started_at: float
     artifact_path: Path
     rgb_paths: dict[str, Path]
     rgb_writers: dict[str, cv2.VideoWriter | None]
@@ -66,10 +74,10 @@ def _camera_dir(artifact_path: Path, camera_key: str) -> Path:
     raise ValueError(f"Unsupported recording camera: {camera_key}")
 
 
-def _metadata_timestamp() -> str:
-    now = datetime.now(UTC)
-    centiseconds = now.microsecond // 10_000
-    return f"{now:%Y-%m-%d:%H-%M-%S}-{centiseconds // 10}-{centiseconds % 10}"
+def _relative_artifact_path(root: Path, path: Path) -> str:
+    if path == Path():
+        raise ValueError(f"Artifact path is missing under {root}")
+    return str(path.relative_to(root))
 
 
 class RecordingNode(Node):
@@ -93,12 +101,14 @@ class RecordingNode(Node):
         self._save_artifacts_enabled = True
         self._run_count = 0
         self._active_run: ActiveRecordingRun | None = None
-        run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        self._artifact_path = self._config.artifact_root / run_id
-        self._prepare_experiment_folder()
+        self._run_lock = Lock()
+        self._run_id = experiment_run_id()
+        self._artifact_path = self._config.artifact_root / self._run_id
+        self._prepare_session_folder()
         self._runtime()
         self.get_logger().info(
-            f"Recording interface ready: artifact_root={self._config.artifact_root}"
+            f"Recording interface ready: run_id={self._run_id}, "
+            f"artifact_path={self._artifact_path}"
         )
 
     def _runtime(self) -> None:
@@ -156,7 +166,7 @@ class RecordingNode(Node):
             callback_group=self._callback_group,
         )
 
-    def _prepare_experiment_folder(self) -> None:
+    def _prepare_session_folder(self) -> None:
         self._artifact_path.mkdir(parents=True, exist_ok=True)
         for camera in self._config.cameras:
             _camera_dir(self._artifact_path, camera.key).mkdir(parents=True, exist_ok=True)
@@ -178,9 +188,6 @@ class RecordingNode(Node):
         feedback = RecordExperiment.Feedback()
         feedback.phase = "waiting_for_cutting"
         goal_handle.publish_feedback(feedback)
-        if goal_handle.request.run_id.strip():
-            self._artifact_path = self._config.artifact_root / goal_handle.request.run_id.strip()
-            self._prepare_experiment_folder()
         goal_handle.succeed()
         result = RecordExperiment.Result()
         result.success = True
@@ -191,7 +198,7 @@ class RecordingNode(Node):
     def _execute_capture(self, goal_handle):
         label = goal_handle.request.label.strip()
         if not label:
-            label = datetime.now(UTC).strftime("rescan_%Y%m%dT%H%M%SZ")
+            label = f"rescan_{wall_clock_timestamp():.6f}"
         scans = self._capture_pointcloud(
             label,
             bool(goal_handle.request.publish_planning_cloud),
@@ -218,120 +225,173 @@ class RecordingNode(Node):
         return response
 
     def _on_cutting_flag(self, msg: Bool) -> None:
-        if msg.data and self._active_run is None:
+        with self._run_lock:
+            recording_active = self._active_run is not None
+        if msg.data and not recording_active:
             self._start_recording_run()
-        if not msg.data and self._active_run is not None:
+        if not msg.data and recording_active:
             self._stop_recording_run()
 
     def _start_recording_run(self) -> None:
+        run_index = self._run_count + 1
+        run_label = recording_run_label(run_index)
         rgb_paths = {
-            camera.key: self._next_existing_name(_camera_dir(self._artifact_path, camera.key) / "rgb.avi")
+            camera.key: self._next_existing_name(
+                _camera_dir(self._artifact_path, camera.key) / "rgb.avi"
+            )
             for camera in self._config.cameras
         }
-        self._active_run = ActiveRecordingRun(
-            index=self._run_count,
-            started_at=_metadata_timestamp(),
+        active_run = ActiveRecordingRun(
+            label=run_label,
+            index=run_index - 1,
+            started_at=wall_clock_timestamp(),
             artifact_path=self._artifact_path,
             rgb_paths=rgb_paths,
             rgb_writers={camera.key: None for camera in self._config.cameras},
             rgb_counts={camera.key: 0 for camera in self._config.cameras},
             audio_path=self._next_existing_name(self._artifact_path / "audio" / "audio.wav"),
         )
-        self._run_count += 1
-        self._active_run.pointcloud_scans.extend(
-            self._capture_pointcloud("pointcloud_start", False, True, None)
+        with self._run_lock:
+            if self._active_run is not None:
+                return
+            self._active_run = active_run
+            self._run_count += 1
+        start_scans = self._capture_pointcloud(
+            "pointcloud_start",
+            False,
+            True,
+            None,
+            active_run.artifact_path,
         )
+        with self._run_lock:
+            if self._active_run is active_run:
+                active_run.pointcloud_scans.extend(start_scans)
 
     def _write_rgb_frame(self, camera_key: str, msg: Image) -> None:
-        if self._active_run is None:
-            return
         frame_bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        writer = self._active_run.rgb_writers[camera_key]
-        if writer is None:
-            height, width = frame_bgr.shape[:2]
-            writer = cv2.VideoWriter(
-                str(self._active_run.rgb_paths[camera_key]),
-                cv2.VideoWriter_fourcc(*"MJPG"),
-                self._config.video_fps,
-                (width, height),
-            )
-            if not writer.isOpened():
-                raise RuntimeError(f"Could not open RGB video writer: {self._active_run.rgb_paths[camera_key]}")
-            self._active_run.rgb_writers[camera_key] = writer
-        writer.write(frame_bgr)
-        self._active_run.rgb_counts[camera_key] += 1
+        with self._run_lock:
+            if self._active_run is None:
+                return
+            writer = self._active_run.rgb_writers[camera_key]
+            if writer is None:
+                height, width = frame_bgr.shape[:2]
+                writer = cv2.VideoWriter(
+                    str(self._active_run.rgb_paths[camera_key]),
+                    cv2.VideoWriter_fourcc(*"MJPG"),
+                    self._config.video_fps,
+                    (width, height),
+                )
+                if not writer.isOpened():
+                    raise RuntimeError(
+                        f"Could not open RGB video writer: {self._active_run.rgb_paths[camera_key]}"
+                    )
+                self._active_run.rgb_writers[camera_key] = writer
+            writer.write(frame_bgr)
+            self._active_run.rgb_counts[camera_key] += 1
 
     def _write_audio_packet(self, msg: AudioChunk) -> None:
-        if self._active_run is None:
-            return
-        if self._active_run.audio_wav is None:
-            self._active_run.audio_sample_rate_hz = int(msg.sample_rate_hz)
-            self._active_run.audio_channels = int(msg.channels)
-            self._active_run.audio_encoding = str(msg.encoding)
-            self._active_run.audio_wav = wave.open(str(self._active_run.audio_path), "wb")
-            self._active_run.audio_wav.setnchannels(self._active_run.audio_channels)
-            self._active_run.audio_wav.setsampwidth(2)
-            self._active_run.audio_wav.setframerate(self._active_run.audio_sample_rate_hz)
-        elif (
-            self._active_run.audio_sample_rate_hz != int(msg.sample_rate_hz)
-            or self._active_run.audio_channels != int(msg.channels)
-            or self._active_run.audio_encoding != str(msg.encoding)
-        ):
-            raise ValueError("Audio format changed during recording")
-        self._active_run.audio_wav.writeframes(
-            array("h", (int(value) for value in msg.samples)).tobytes()
-        )
+        samples = array("h", (int(value) for value in msg.samples)).tobytes()
+        with self._run_lock:
+            if self._active_run is None:
+                return
+            if self._active_run.audio_wav is None:
+                self._active_run.audio_sample_rate_hz = int(msg.sample_rate_hz)
+                self._active_run.audio_channels = int(msg.channels)
+                self._active_run.audio_encoding = str(msg.encoding)
+                self._active_run.audio_wav = wave.open(str(self._active_run.audio_path), "wb")
+                self._active_run.audio_wav.setnchannels(self._active_run.audio_channels)
+                self._active_run.audio_wav.setsampwidth(2)
+                self._active_run.audio_wav.setframerate(self._active_run.audio_sample_rate_hz)
+            elif (
+                self._active_run.audio_sample_rate_hz != int(msg.sample_rate_hz)
+                or self._active_run.audio_channels != int(msg.channels)
+                or self._active_run.audio_encoding != str(msg.encoding)
+            ):
+                raise ValueError("Audio format changed during recording")
+            self._active_run.audio_wav.writeframes(samples)
 
     def _stop_recording_run(self) -> None:
-        active_run = self._active_run
-        active_run.pointcloud_scans.extend(self._capture_pointcloud("pointcloud_stop", False, True, None))
-        stopped_at = _metadata_timestamp()
+        stopped_at = wall_clock_timestamp()
+        with self._run_lock:
+            active_run = self._active_run
+        if active_run is None:
+            return
+        boundary_error: Exception | None = None
+        try:
+            active_run.pointcloud_scans.extend(
+                self._capture_pointcloud(
+                    "pointcloud_stop",
+                    False,
+                    True,
+                    None,
+                    active_run.artifact_path,
+                )
+            )
+        except Exception as exc:
+            boundary_error = exc
+            self.get_logger().error(
+                f"Stop pointcloud capture failed after recording stopped: {exc}"
+            )
+        with self._run_lock:
+            self._active_run = None
+        self._close_run_files(active_run)
+        self._write_run_metadata(active_run, stopped_at)
+        if boundary_error is not None:
+            raise boundary_error
+
+    def _close_run_files(self, active_run: ActiveRecordingRun) -> None:
+        """Finalize C-backed media handles before metadata exposes the artifact paths."""
         for writer in active_run.rgb_writers.values():
             if writer is not None:
                 writer.release()
         if active_run.audio_wav is not None:
             active_run.audio_wav.close()
-        self._write_run_metadata(active_run, stopped_at)
-        self._active_run = None
 
-    def _write_run_metadata(self, active_run: ActiveRecordingRun, stopped_at: str) -> None:
-        audio_meta_path = self._next_existing_name(self._artifact_path / "audio" / "audio_meta.json")
-        manifest_path = self._next_existing_name(self._artifact_path / "manifest.json")
+    def _write_run_metadata(self, active_run: ActiveRecordingRun, stopped_at: float) -> None:
+        run_root = active_run.artifact_path
+        audio_meta_path = self._next_existing_name(run_root / "audio" / "audio_meta.json")
+        manifest_path = self._next_existing_name(run_root / "manifest.json")
         audio_meta = {
+            "run": active_run.label,
             "started_at": active_run.started_at,
+            "started_at_local": local_timestamp_label(active_run.started_at),
             "stopped_at": stopped_at,
+            "stopped_at_local": local_timestamp_label(stopped_at),
             "sample_rate_hz": active_run.audio_sample_rate_hz,
-            "wav": str(active_run.audio_path.relative_to(self._artifact_path)),
+            "wav": _relative_artifact_path(run_root, active_run.audio_path),
         }
-        write_json(audio_meta_path, audio_meta)
-        write_json(
-            manifest_path,
-            {
-                "started_at": active_run.started_at,
-                "stopped_at": stopped_at,
-                "rgb_video": {
-                    camera.key: {
-                        "video": str(active_run.rgb_paths[camera.key].relative_to(self._artifact_path)),
-                        "frame_rate": self._config.video_fps,
-                        "frames": active_run.rgb_counts[camera.key],
-                    }
-                    for camera in self._config.cameras
-                },
-                "audio": {
-                    "metadata": str(audio_meta_path.relative_to(self._artifact_path)),
-                    **audio_meta,
-                },
-                "pointcloud_scans": [
-                    {
-                        "label": scan.label,
-                        "camera": scan.camera_key,
-                        "path": str(scan.artifact_path.relative_to(self._artifact_path)),
-                        "point_count": scan.point_count,
-                    }
-                    for scan in active_run.pointcloud_scans
-                ],
+        manifest = {
+            "run": active_run.label,
+            "started_at": active_run.started_at,
+            "started_at_local": local_timestamp_label(active_run.started_at),
+            "stopped_at": stopped_at,
+            "stopped_at_local": local_timestamp_label(stopped_at),
+            "rgb_video": {
+                camera.key: {
+                    "video": _relative_artifact_path(run_root, active_run.rgb_paths[camera.key]),
+                    "frame_rate": self._config.video_fps,
+                    "frames": active_run.rgb_counts[camera.key],
+                }
+                for camera in self._config.cameras
             },
-        )
+            "audio": {
+                "metadata": _relative_artifact_path(run_root, audio_meta_path),
+                **audio_meta,
+            },
+            "pointcloud_scans": [
+                {
+                    "label": scan.label,
+                    "camera": scan.camera_key,
+                    "path": _relative_artifact_path(run_root, scan.artifact_path),
+                    "point_count": scan.point_count,
+                    "timestamp": scan.timestamp,
+                    "timestamp_local": local_timestamp_label(scan.timestamp),
+                }
+                for scan in active_run.pointcloud_scans
+            ],
+        }
+        write_json(manifest_path, manifest)
+        write_json(audio_meta_path, audio_meta)
 
     def _capture_pointcloud(
         self,
@@ -339,6 +399,7 @@ class RecordingNode(Node):
         publish_planning_cloud: bool,
         save_to_session: bool,
         goal_handle,
+        artifact_root: Path | None = None,
     ) -> list[PointCloudScan]:
         scans: list[PointCloudScan] = []
         for camera in self._config.cameras:
@@ -398,15 +459,18 @@ class RecordingNode(Node):
                     skip_nans=True,
                 )
             )
+            captured_at = wall_clock_timestamp()
             scan = PointCloudScan(
                 label=label,
                 camera_key=camera.key,
                 cloud=cloud["msg"],
                 point_count=point_count,
+                timestamp=captured_at,
             )
             if save_to_session:
+                session_root = artifact_root if artifact_root is not None else self._artifact_path
                 scan.artifact_path = self._next_existing_name(
-                    _camera_dir(self._artifact_path, scan.camera_key) / f"{scan.label}.pcd"
+                    _camera_dir(session_root, scan.camera_key) / f"{scan.label}.pcd"
                 )
                 write_pointcloud_pcd(scan.artifact_path, scan.cloud)
             scans.append(scan)

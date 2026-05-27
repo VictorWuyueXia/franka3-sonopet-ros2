@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import rclpy
 from fr3_sonopet_interfaces.msg import RunState as RunStateMsg
 from rclpy.node import Node
@@ -13,8 +15,8 @@ class ExperimentSupervisorNode(Node):
     def __init__(self) -> None:
         super().__init__("experiment_supervisor_node")
         self.declare_parameter("fake_run", False)
-        self.declare_parameter("run_id", "manual_run")
-        self._state = RunState(run_id=str(self.get_parameter("run_id").value), ready=True)
+        run_id = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S")
+        self._state = RunState(run_id=run_id, ready=True)
         self._state_pub = self.create_publisher(RunStateMsg, "/sonopet/run_state", 10)
         self._state_timer = self.create_timer(1.0, self._publish_state)
         self.get_logger().info(f"Experiment supervisor ready: run_id={self._state.run_id}")

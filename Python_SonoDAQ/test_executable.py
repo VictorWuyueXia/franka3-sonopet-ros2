@@ -33,7 +33,7 @@ EXE = "/home/btllab/rp-repo/sonopet/Python_SonoDAQ/sonopet_live_data"
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 5000
 
-NUM_SAMPLES = 100000
+NUM_SAMPLES = 200000
 INTERVAL = 0.005  # 5 ms
 
 USE_FOOTPEDAL = True

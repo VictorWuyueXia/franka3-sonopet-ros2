@@ -120,7 +120,8 @@ The sensor launch republishes it on `/sonopet/d405_intrinsics/<role>/<stream>/ca
 Continuous RGB topics remain active. Continuous point cloud output is disabled
 by default; the recorder temporarily enables each camera point cloud publisher
 only to save start and end PCD snapshots. Recording artifacts are written under
-`artifacts/experiments/<run_id>/`:
+`ros2_ws/artifacts/experiments/<timestamp>/`, for example
+`ros2_ws/artifacts/experiments/20260527T131514/`:
 
 ```text
 manifest.json
