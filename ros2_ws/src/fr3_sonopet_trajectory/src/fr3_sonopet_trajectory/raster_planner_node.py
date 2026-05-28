@@ -30,8 +30,6 @@ class RasterPlannerNode(Node):
         self.declare_parameter("target_frame", "fr3_link0")
         self.declare_parameter("planning_cloud_topic", "/sonopet/captured_planning_cloud")
         self.declare_parameter("planning_cloud_display_topic", "/sonopet/planning_cloud")
-        self.declare_parameter("planning_cloud_max_distance_m", 0.5)
-        self.declare_parameter("planning_cloud_trim_fraction", 0.2)
         self.declare_parameter("clicked_point_topic", "/clicked_point")
         self.declare_parameter("square_side_m", 0.02)
         self.declare_parameter("line_spacing_m", 0.002)
@@ -41,12 +39,6 @@ class RasterPlannerNode(Node):
         self._target_frame = str(self.get_parameter("target_frame").value)
         self._cloud_topic = str(self.get_parameter("planning_cloud_topic").value)
         self._display_cloud_topic = str(self.get_parameter("planning_cloud_display_topic").value)
-        self._cloud_max_distance_m = float(
-            self.get_parameter("planning_cloud_max_distance_m").value
-        )
-        self._cloud_trim_fraction = float(
-            self.get_parameter("planning_cloud_trim_fraction").value
-        )
         self._clicked_topic = str(self.get_parameter("clicked_point_topic").value)
         self._spec = RasterSpec(
             square_side_m=float(self.get_parameter("square_side_m").value),
@@ -105,29 +97,26 @@ class RasterPlannerNode(Node):
         cloud_frame = cloud_msg.header.frame_id
         if not cloud_frame:
             raise RuntimeError("Captured point cloud does not carry a frame_id")
+        if cloud_frame != self._target_frame:
+            raise RuntimeError(
+                f"Captured point cloud must be in {self._target_frame}, got {cloud_frame}"
+            )
         xyz, rgb = _pointcloud2_xyz_rgb_arrays(cloud_msg)
-        keep_indices = _planning_cloud_indices(
-            xyz, self._cloud_max_distance_m, self._cloud_trim_fraction
-        )
-        filtered_xyz = xyz[keep_indices]
-        filtered_rgb = rgb[keep_indices] if rgb is not None else None
-        target_from_cloud = self._lookup_matrix(self._target_frame, cloud_frame)
-        target_xyz = _transform_points(filtered_xyz, target_from_cloud)
 
         # Cache the latest captured cloud directly in the robot base frame used for raster geometry.
-        self._planning_cloud_points = target_xyz
+        self._planning_cloud_points = xyz
         self._display_cloud_pub.publish(
             _make_pointcloud2(
-                target_xyz,
-                filtered_rgb,
+                xyz,
+                rgb,
                 self._target_frame,
                 self.get_clock().now().to_msg(),
             )
         )
         self.get_logger().info(
-            f"Updated planning cloud with {filtered_xyz.shape[0]} points; "
+            f"Updated planning cloud with {xyz.shape[0]} points; "
             f"published {self._display_cloud_topic} in {self._target_frame}"
-            f" ({'colored' if filtered_rgb is not None else 'xyz-only'})"
+            f" ({'colored' if rgb is not None else 'xyz-only'})"
         )
 
     def _on_clicked_point(self, point_msg: PointStamped) -> None:
@@ -165,15 +154,12 @@ class RasterPlannerNode(Node):
 
     def _build_publish_plan(self, dig_depth_mm: float = 0.0) -> RasterPlan:
         # Geometry is computed and emitted in the robot base frame.
-        if dig_depth_mm < 0.0:
-            raise ValueError("Dig depth must be non-negative")
         cloud_points = self._require_cloud_points()
         selected_base = self._require_selected_center()
         target_build = _resample_raster(
             cloud_points,
             selected_base,
             self._spec,
-            pre_filtered=True,
             dig_depth_m=dig_depth_mm / 1000.0,
         )
         self._selected_center_base = target_build.center.copy()
@@ -271,32 +257,6 @@ def _pointcloud2_xyz_rgb_arrays(
     xyz = matrix[:, :3]
     rgb = matrix[:, 3].astype(np.float32) if has_rgb else None
     return xyz, rgb
-
-
-def _planning_cloud_indices(
-    xyz: np.ndarray, max_distance_m: float, trim_fraction: float
-) -> np.ndarray:
-    """Return the index subset that survives the spherical crop and farthest-trim policy."""
-    if max_distance_m <= 0.0:
-        raise ValueError("max_distance_m must be positive")
-    if not 0.0 <= trim_fraction < 0.5:
-        raise ValueError("trim_fraction must be in [0.0, 0.5)")
-    finite_mask = np.isfinite(xyz).all(axis=1)
-    finite_indices = np.flatnonzero(finite_mask)
-    if finite_indices.size == 0:
-        raise ValueError("Point cloud has no finite points")
-    finite_xyz = xyz[finite_indices]
-    radius_sq = np.einsum("ij,ij->i", finite_xyz, finite_xyz)
-    inside = radius_sq <= max_distance_m * max_distance_m
-    cropped_indices = finite_indices[inside]
-    if cropped_indices.size == 0:
-        raise ValueError("Point cloud has no points inside the planning radius")
-    keep_count = int(round(cropped_indices.size * (1.0 - trim_fraction)))
-    if keep_count <= 0:
-        raise ValueError("Point cloud trimming removed all planning points")
-    cropped_radius_sq = radius_sq[inside]
-    nearest = np.argpartition(cropped_radius_sq, keep_count - 1)[:keep_count]
-    return cropped_indices[nearest]
 
 
 def _make_pointcloud2(

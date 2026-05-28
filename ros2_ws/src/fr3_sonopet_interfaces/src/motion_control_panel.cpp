@@ -46,7 +46,7 @@ public:
     save_artifacts_ = new QCheckBox("Save artifacts at session end", this);
     confirmation_ = new QLineEdit(this);
     status_ = new QLabel("Waiting for RViz node.", this);
-    auto * dig_depth_validator = new QDoubleValidator(0.0, 1000.0, 3, dig_depth_mm_);
+    auto * dig_depth_validator = new QDoubleValidator(-1000.0, 1000.0, 3, dig_depth_mm_);
     dig_depth_validator->setNotation(QDoubleValidator::StandardNotation);
     confirmation_->setMaxLength(1);
     confirmation_->setPlaceholderText("E");

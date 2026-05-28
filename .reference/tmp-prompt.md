@@ -145,14 +145,17 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 + re-try getting joint states when switched to programming mode
 
 + re-select last X-Y, find new Z
-= dig-in distance in raster patch (0-2mm)
-= stop motion adhere to speed limit
-= save config, time format, save at start&end of raster, only start and end timestamp
++ stop motion adhere to speed limit
++ save config, time format, save at start&end of raster, only start and end timestamp
 
-- first pointcloud scan
-- preview TCP name show
-- pointcloud scan at beginning and end of raster, manual scan named manual scan
++ dig-in distance in raster patch (0-2mm), negative values
++ pointcloud using base coordinate
++ first pointcloud scan show
++ preview TCP name show
++ pointcloud scan at beginning and end of raster
 
+- load same intrinsics
+- seperate topics domain /sonopet and /fr3 for topics like /sonopet/vendor_joint_state_stale
 - run alias
 - sonopet built in
 - IK then FK to check accuracy by supervisor

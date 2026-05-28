@@ -59,6 +59,7 @@ HARDWARE_STATE_SERVICE = "/controller_manager/set_hardware_component_state"
 SWITCH_CONTROLLER_SERVICE = "/controller_manager/switch_controller"
 FRANKA_HARDWARE_COMPONENT = "FrankaHardwareInterface"
 CUTTING_TOPIC = "/sonopet/cutting"
+VENDOR_JOINT_STATE_STALE_TOPIC = "/sonopet/vendor_joint_state_stale"
 FRANKA_RECOVERY_CONTROLLERS = (
     "franka_robot_state_broadcaster",
     "joint_state_broadcaster",
@@ -103,6 +104,11 @@ class MotionRunnerNode(Node):
             10,
         )
         self._cutting_pub = self.create_publisher(Bool, CUTTING_TOPIC, 10)
+        self._vendor_stale_pub = self.create_publisher(
+            Bool,
+            VENDOR_JOINT_STATE_STALE_TOPIC,
+            10,
+        )
         self._plan_sub = self.create_subscription(
             RasterPlan,
             RASTER_PLAN_TOPIC,
@@ -201,6 +207,7 @@ class MotionRunnerNode(Node):
             self._joint_state_condition.notify_all()
         if recovered:
             self.get_logger().info("Vendor joint states recovered.")
+        self._vendor_stale_pub.publish(Bool(data=False))
         with self._state_lock:
             self._recovery_active = False
         if not preview_active:
@@ -221,6 +228,7 @@ class MotionRunnerNode(Node):
             self._joint_states_lost = True
             self._joint_state_condition.notify_all()
         self.get_logger().warn("Vendor joint states unavailable; waiting for robot mode recovery.")
+        self._vendor_stale_pub.publish(Bool(data=True))
         self._start_vendor_recovery()
 
     def _start_vendor_recovery(self) -> None:

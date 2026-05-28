@@ -18,6 +18,7 @@
   <exec_depend>fr3_sonopet_description</exec_depend>
   <exec_depend>fr3_sonopet_motion</exec_depend>
   <exec_depend>fr3_sonopet_microphone</exec_depend>
+  <exec_depend>fr3_sonopet_pointcloud</exec_depend>
   <exec_depend>fr3_sonopet_recording</exec_depend>
   <exec_depend>fr3_sonopet_supervisor</exec_depend>
   <exec_depend>fr3_sonopet_trajectory</exec_depend>

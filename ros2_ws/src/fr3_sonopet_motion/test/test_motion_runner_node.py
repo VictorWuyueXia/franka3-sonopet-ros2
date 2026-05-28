@@ -221,6 +221,8 @@ def test_vendor_joint_state_health_monitor_is_encoded():
     assert "self._joint_states_available = False" in runner
     assert "self._joint_state_condition = Condition(self._state_lock)" in runner
     assert "self._recovery_active = False" in runner
+    assert 'VENDOR_JOINT_STATE_STALE_TOPIC = "/sonopet/vendor_joint_state_stale"' in runner
+    assert "self._vendor_stale_pub = self.create_publisher(" in runner
     assert "self._joint_state_monitor = self.create_timer(" in runner
     assert "def _monitor_joint_states(self) -> None:" in runner
     assert "monotonic() - self._joint_state_received_s <= JOINT_STATE_SILENCE_S" in runner
@@ -239,6 +241,8 @@ def test_vendor_joint_state_silence_invalidates_stale_state_and_beginning_pose()
     assert "self._beginning_link_from_tcp = None" in runner
     assert "self._joint_states_available = False" in runner
     assert "self._joint_states_lost = True" in runner
+    assert "self._vendor_stale_pub.publish(Bool(data=True))" in runner
+    assert "self._vendor_stale_pub.publish(Bool(data=False))" in runner
     assert "Vendor joint states unavailable; waiting for robot mode recovery." in runner
     assert "Vendor joint states recovered." in runner
 

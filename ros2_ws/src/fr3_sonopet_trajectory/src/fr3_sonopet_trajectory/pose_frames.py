@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class FramePolicy:
     base_frame: str = "fr3_link0"
     tool_frame: str = "sonopet_tcp"
-    planning_cloud_frame: str = "in_hand_color_optical_frame"
+    planning_cloud_frame: str = "fr3_link0"
 
 
 def require_base_frame(frame_id: str, policy: FramePolicy) -> None:

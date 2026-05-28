@@ -7,7 +7,6 @@ import numpy as np
 
 from fr3_sonopet_trajectory.cloud_io import (
     crop_local_patch,
-    filter_planning_cloud,
     finite_xyz_array,
 )
 from fr3_sonopet_trajectory.raster_pattern import RasterSpec, build_surface_raster
@@ -34,13 +33,10 @@ def build_raster_from_cloud(
     selected_center_base: np.ndarray,
     spec: RasterSpec,
     *,
-    pre_filtered: bool = False,
     dig_depth_m: float = 0.0,
 ) -> RasterBuild:
     """Build a base-frame Cartesian raster patch from a selected D405 cloud point."""
-    if dig_depth_m < 0.0:
-        raise ValueError("dig_depth_m must be non-negative")
-    planning_points = cloud_points if pre_filtered else filter_planning_cloud(cloud_points)
+    planning_points = finite_xyz_array(cloud_points)
     patch_points = crop_local_patch(planning_points, selected_center_base, spec.square_side_m)
     frame = fit_surface_frame(patch_points, selected_center_base)
 
@@ -74,11 +70,10 @@ def _resample_raster(
     selected_center_base: np.ndarray,
     spec: RasterSpec,
     *,
-    pre_filtered: bool = False,
     dig_depth_m: float = 0.0,
 ) -> RasterBuild:
     """Reuse selected X-Y, estimate new Z, then rebuild waypoints from the latest cloud."""
-    planning_points = cloud_points if pre_filtered else filter_planning_cloud(cloud_points)
+    planning_points = finite_xyz_array(cloud_points)
     updated_center = np.asarray(selected_center_base, dtype=np.float64).copy()
     search_radius_m = spec.square_side_m / 2.0
 
@@ -102,7 +97,6 @@ def _resample_raster(
         finite_points,
         updated_center,
         spec,
-        pre_filtered=True,
         dig_depth_m=dig_depth_m,
     )
 

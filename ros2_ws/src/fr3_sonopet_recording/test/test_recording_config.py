@@ -44,8 +44,9 @@ pointcloud_snapshots:
 
     assert config.artifact_root == artifact_root()
     assert config.video_fps == 15.0
-    assert config.snapshot_timeout_sec == 5.0
     assert config.cutting_topic == "/sonopet/cutting"
+    assert not hasattr(config.cameras[0], "pointcloud_topic")
+    assert not hasattr(config.cameras[0], "parameter_service")
     assert recording_topics(config) == (
         "/microphone/audio",
         "/sonopet/cutting",

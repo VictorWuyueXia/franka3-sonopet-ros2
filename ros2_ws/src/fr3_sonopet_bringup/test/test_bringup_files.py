@@ -25,11 +25,13 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     raster = (package_root / "config" / "raster.yaml").read_text(encoding="utf-8")
     motion = (package_root / "config" / "motion.yaml").read_text(encoding="utf-8")
     microphone = (package_root / "config" / "microphone.yaml").read_text(encoding="utf-8")
+    pointcloud = (package_root / "config" / "pointcloud.yaml").read_text(encoding="utf-8")
 
     assert not any(line.lstrip().startswith("#") for line in cameras.splitlines())
     assert not any(line.lstrip().startswith("#") for line in recording.splitlines())
     assert not any(line.lstrip().startswith("#") for line in raster.splitlines())
     assert not any(line.lstrip().startswith("#") for line in motion.splitlines())
+    assert not any(line.lstrip().startswith("#") for line in pointcloud.splitlines())
     assert "rgb_camera_profile: 848x480x30" in cameras
     assert "translation_xyz:" in cameras
     assert "quaternion_xyzw:" in cameras
@@ -43,6 +45,8 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     assert "planning_cloud_topic: /sonopet/captured_planning_cloud" in raster
     assert "planning_cloud_display_topic: /sonopet/planning_cloud" in raster
     assert "clicked_point_topic: /clicked_point" in raster
+    assert "trim_distance_m: 0.5" in pointcloud
+    assert "trim_farthest_fraction: 0.2" in pointcloud
     assert "idle_joint_positions:" in motion
     assert "motion_speed_m_s: 0.03" in motion
     assert "raster_speed_m_s:" in motion
@@ -66,6 +70,7 @@ def test_launch_files_use_sensor_only_recording_defaults():
         encoding="utf-8"
     )
     recording_launch = (package_root / "launch" / "recording.launch.py").read_text(encoding="utf-8")
+    package_xml = (package_root / "package.xml").read_text(encoding="utf-8")
     microphone_launch = (package_root / "launch" / "microphone.launch.py").read_text(
         encoding="utf-8"
     )
@@ -120,12 +125,18 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "Enabled: false" in rviz
     assert "TF Prefix: preview" in rviz
     assert "All Enabled: false" in rviz
+    assert "Show Names: false" in rviz
     assert "Color Transformer: RGB8" in rviz
     assert "recording_topics.yaml" in recording_launch
     assert "cameras.yaml" in recording_launch
+    assert "pointcloud.yaml" in recording_launch
+    assert 'package="fr3_sonopet_pointcloud"' in recording_launch
+    assert 'executable="pointcloud_node"' in recording_launch
+    assert "<exec_depend>fr3_sonopet_pointcloud</exec_depend>" in package_xml
     assert "bringup_config_dir" in recording_launch
     assert "description_config_dir" in recording_launch
     assert "fr3_sonopet_description" in recording_launch
+    assert "/sonopet/pointcloud/status_marker" not in rviz
     assert "microphone.yaml" in microphone_launch
 
 
@@ -152,3 +163,4 @@ def test_motion_panel_plugin_is_exported_from_interfaces_package():
     assert "BuildRasterPlan" in panel
     assert "/sonopet/build_raster_plan" in panel
     assert "goal.update_selected_center = false" in panel
+    assert "QDoubleValidator(-1000.0, 1000.0, 3, dig_depth_mm_)" in panel

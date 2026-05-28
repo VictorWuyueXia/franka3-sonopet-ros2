@@ -5,6 +5,7 @@ pythonpath = [
     "ros2_ws/src/fr3_sonopet_bringup/src",
     "ros2_ws/src/fr3_sonopet_microphone/src",
     "ros2_ws/src/fr3_sonopet_motion/src",
+    "ros2_ws/src/fr3_sonopet_pointcloud/src",
     "ros2_ws/src/fr3_sonopet_recording/src",
     "ros2_ws/src/fr3_sonopet_supervisor/src",
     "ros2_ws/src/fr3_sonopet_trajectory/src",

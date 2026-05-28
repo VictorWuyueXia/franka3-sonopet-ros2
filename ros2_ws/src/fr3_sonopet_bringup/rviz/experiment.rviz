@@ -299,55 +299,55 @@ Visualization Manager:
         in_hand_depth_optical_frame:
           Value: true
         preview/base:
-          Value: true
+          Value: false
         preview/fr3_link0:
-          Value: true
+          Value: false
         preview/fr3_link0_accelerometer_bottom:
-          Value: true
+          Value: false
         preview/fr3_link0_accelerometer_top:
-          Value: true
+          Value: false
         preview/fr3_link1:
-          Value: true
+          Value: false
         preview/fr3_link1_accelerometer_bottom:
-          Value: true
+          Value: false
         preview/fr3_link1_accelerometer_top:
-          Value: true
+          Value: false
         preview/fr3_link2:
-          Value: true
+          Value: false
         preview/fr3_link2_accelerometer_bottom:
-          Value: true
+          Value: false
         preview/fr3_link2_accelerometer_top:
-          Value: true
+          Value: false
         preview/fr3_link3:
-          Value: true
+          Value: false
         preview/fr3_link3_accelerometer_bottom:
-          Value: true
+          Value: false
         preview/fr3_link3_accelerometer_top:
-          Value: true
+          Value: false
         preview/fr3_link4:
-          Value: true
+          Value: false
         preview/fr3_link4_accelerometer_bottom:
-          Value: true
+          Value: false
         preview/fr3_link4_accelerometer_top:
-          Value: true
+          Value: false
         preview/fr3_link5:
-          Value: true
+          Value: false
         preview/fr3_link5_accelerometer_bottom:
-          Value: true
+          Value: false
         preview/fr3_link5_accelerometer_top:
-          Value: true
+          Value: false
         preview/fr3_link6:
-          Value: true
+          Value: false
         preview/fr3_link7:
-          Value: true
+          Value: false
         preview/fr3_link8:
-          Value: true
+          Value: false
         preview/sonopet_link:
-          Value: true
+          Value: false
         preview/sonopet_tcp:
-          Value: true
+          Value: false
         preview/sonopet_tcp_nominal:
-          Value: true
+          Value: false
         sonopet_link:
           Value: true
         sonopet_tcp:

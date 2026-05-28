@@ -1,11 +1,14 @@
 string label
 bool publish_planning_cloud
 bool save_artifacts
+string artifact_root
 ---
 bool success
 string message
 string[] camera_keys
 string[] artifact_paths
 int32[] point_counts
+float64[] timestamps
+string[] timestamp_locals
 ---
 string phase

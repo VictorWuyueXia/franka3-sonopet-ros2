@@ -4,23 +4,11 @@ import csv
 import json
 import wave
 from array import array
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
-from sensor_msgs_py import point_cloud2
-
-
-@dataclass(frozen=True)
-class SnapshotResult:
-    label: str
-    path: Path
-    success: bool
-    point_count: int = 0
-    error: str = ""
 
 
 class RgbVideoRecorder:
@@ -116,64 +104,3 @@ class AudioWavRecorder:
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def write_pointcloud_pcd(path: Path, cloud_msg) -> int:
-    """Write XYZ fields from a PointCloud2 message to an ASCII PCD artifact."""
-
-    raw_points = point_cloud2.read_points(cloud_msg, field_names=("x", "y", "z"), skip_nans=True)
-    points: list[tuple[float, float, float]] = []
-    for point in raw_points:
-        if hasattr(point, "dtype") and point.dtype.names:
-            xyz = (float(point["x"]), float(point["y"]), float(point["z"]))
-        else:
-            xyz = (float(point[0]), float(point[1]), float(point[2]))
-        points.append(xyz)
-
-    with path.open("w", encoding="utf-8") as stream:
-        stream.write("# .PCD v0.7 - Point Cloud Data file format\n")
-        stream.write("VERSION 0.7\n")
-        stream.write("FIELDS x y z\n")
-        stream.write("SIZE 4 4 4\n")
-        stream.write("TYPE F F F\n")
-        stream.write("COUNT 1 1 1\n")
-        stream.write(f"WIDTH {len(points)}\n")
-        stream.write("HEIGHT 1\n")
-        stream.write("VIEWPOINT 0 0 0 1 0 0 0\n")
-        stream.write(f"POINTS {len(points)}\n")
-        stream.write("DATA ascii\n")
-        for x, y, z in points:
-            stream.write(f"{x:.9g} {y:.9g} {z:.9g}\n")
-    return len(points)
-
-
-def capture_pointcloud_snapshot(
-    label: str,
-    path: Path,
-    timeout_sec: float,
-    set_enabled: Callable[[bool], None],
-    receive_cloud: Callable[[float], Any],
-) -> SnapshotResult:
-    """Enable the RealSense pointcloud stream only around one PCD capture."""
-
-    result: SnapshotResult | None = None
-    try:
-        set_enabled(True)
-        point_count = write_pointcloud_pcd(path, receive_cloud(timeout_sec))
-        result = SnapshotResult(label=label, path=path, success=True, point_count=point_count)
-    except Exception as exc:
-        result = SnapshotResult(label=label, path=path, success=False, error=str(exc))
-    finally:
-        try:
-            set_enabled(False)
-        except Exception as exc:
-            if result is None or result.success:
-                result = SnapshotResult(label=label, path=path, success=False, error=str(exc))
-            else:
-                result = SnapshotResult(
-                    label=label,
-                    path=path,
-                    success=False,
-                    error=f"{result.error}; disable failed: {exc}",
-                )
-    return result

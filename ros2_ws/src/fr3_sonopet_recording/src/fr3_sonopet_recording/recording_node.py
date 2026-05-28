@@ -12,19 +12,16 @@ import rclpy
 from cv_bridge import CvBridge
 from fr3_sonopet_interfaces.action import CapturePointCloud, RecordExperiment
 from fr3_sonopet_interfaces.msg import AudioChunk
-from rcl_interfaces.srv import SetParameters
-from rclpy.action import ActionServer
+from rclpy.action import ActionClient, ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, qos_profile_sensor_data
-from sensor_msgs.msg import Image, PointCloud2
-from sensor_msgs_py import point_cloud2
+from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
 from std_srvs.srv import SetBool
 
-from fr3_sonopet_recording.artifact_writers import write_json, write_pointcloud_pcd
+from fr3_sonopet_recording.artifact_writers import write_json
 from fr3_sonopet_recording.recording_config import (
     experiment_run_id,
     load_recording_config,
@@ -41,9 +38,9 @@ class PointCloudScan:
 
     label: str
     camera_key: str
-    cloud: PointCloud2
     point_count: int
     timestamp: float
+    timestamp_local: str
     artifact_path: Path = Path()
 
 
@@ -112,15 +109,6 @@ class RecordingNode(Node):
         )
 
     def _runtime(self) -> None:
-        self._planning_cloud_pub = self.create_publisher(
-            PointCloud2,
-            "/sonopet/captured_planning_cloud",
-            QoSProfile(
-                depth=1,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,
-                history=HistoryPolicy.KEEP_LAST,
-            ),
-        )
         self._rgb_subscriptions = [
             self.create_subscription(
                 Image,
@@ -152,11 +140,10 @@ class RecordingNode(Node):
             self._execute_record,
             callback_group=self._callback_group,
         )
-        self._capture_server = ActionServer(
+        self._capture_client = ActionClient(
             self,
             CapturePointCloud,
             "/sonopet/capture_pointcloud",
-            self._execute_capture,
             callback_group=self._callback_group,
         )
         self._artifact_saving_service = self.create_service(
@@ -165,6 +152,17 @@ class RecordingNode(Node):
             self._set_artifact_saving,
             callback_group=self._callback_group,
         )
+        self._startup_capture_timer = self.create_timer(
+            1.0,
+            self._capture_startup_planning_cloud,
+            callback_group=self._callback_group,
+        )
+
+    def _capture_startup_planning_cloud(self) -> None:
+        # The startup cloud gives RViz and raster planning a visible surface before operator input.
+        self.destroy_timer(self._startup_capture_timer)
+        self._startup_capture_timer = None
+        self._capture_pointcloud("pointcloud_start", True, True, None)
 
     def _prepare_session_folder(self) -> None:
         self._artifact_path.mkdir(parents=True, exist_ok=True)
@@ -193,25 +191,6 @@ class RecordingNode(Node):
         result.success = True
         result.message = "Recording starts and stops from /sonopet/cutting."
         result.artifact_path = str(self._artifact_path)
-        return result
-
-    def _execute_capture(self, goal_handle):
-        label = goal_handle.request.label.strip()
-        if not label:
-            label = f"rescan_{wall_clock_timestamp():.6f}"
-        scans = self._capture_pointcloud(
-            label,
-            bool(goal_handle.request.publish_planning_cloud),
-            bool(goal_handle.request.save_artifacts),
-            goal_handle,
-        )
-        goal_handle.succeed()
-        result = CapturePointCloud.Result()
-        result.success = True
-        result.message = f"Captured {len(scans)} pointcloud scans."
-        result.camera_keys = [scan.camera_key for scan in scans]
-        result.artifact_paths = [str(scan.artifact_path) for scan in scans]
-        result.point_counts = [scan.point_count for scan in scans]
         return result
 
     def _set_artifact_saving(self, request: SetBool.Request, response: SetBool.Response):
@@ -385,7 +364,7 @@ class RecordingNode(Node):
                     "path": _relative_artifact_path(run_root, scan.artifact_path),
                     "point_count": scan.point_count,
                     "timestamp": scan.timestamp,
-                    "timestamp_local": local_timestamp_label(scan.timestamp),
+                    "timestamp_local": scan.timestamp_local,
                 }
                 for scan in active_run.pointcloud_scans
             ],
@@ -398,88 +377,43 @@ class RecordingNode(Node):
         label: str,
         publish_planning_cloud: bool,
         save_to_session: bool,
-        goal_handle,
+        _goal_handle,
         artifact_root: Path | None = None,
     ) -> list[PointCloudScan]:
-        scans: list[PointCloudScan] = []
-        for camera in self._config.cameras:
-            if goal_handle is not None:
-                feedback = CapturePointCloud.Feedback()
-                feedback.phase = f"{camera.key}_{label}"
-                goal_handle.publish_feedback(feedback)
-            client = self.create_client(
-                SetParameters,
-                camera.parameter_service,
-                callback_group=self._callback_group,
-            )
-            if not client.wait_for_service(timeout_sec=2.0):
-                raise RuntimeError(f"Parameter service unavailable: {camera.parameter_service}")
-            request = SetParameters.Request()
-            request.parameters = [
-                Parameter("pointcloud.enable", Parameter.Type.BOOL, True).to_parameter_msg()
-            ]
-            response = wait_future(client.call_async(request))
-            failures = [result.reason for result in response.results if not result.successful]
-            if failures:
-                raise RuntimeError("; ".join(failures))
-            received = Event()
-            cloud: dict[str, PointCloud2] = {}
-
-            def _on_cloud(
-                msg: PointCloud2,
-                cloud_buffer: dict[str, PointCloud2] = cloud,
-                received_event: Event = received,
-            ) -> None:
-                cloud_buffer["msg"] = msg
-                received_event.set()
-
-            subscription = self.create_subscription(
-                PointCloud2,
-                camera.pointcloud_topic,
-                _on_cloud,
-                qos_profile_sensor_data,
-                callback_group=self._callback_group,
-            )
-            if not received.wait(timeout=self._config.snapshot_timeout_sec):
-                raise RuntimeError(f"Timed out waiting for {camera.pointcloud_topic}")
-            self.destroy_subscription(subscription)
-            request.parameters = [
-                Parameter("pointcloud.enable", Parameter.Type.BOOL, False).to_parameter_msg()
-            ]
-            response = wait_future(client.call_async(request))
-            failures = [result.reason for result in response.results if not result.successful]
-            if failures:
-                raise RuntimeError("; ".join(failures))
-            self.destroy_client(client)
-            point_count = sum(
-                1
-                for _ in point_cloud2.read_points(
-                    cloud["msg"],
-                    field_names=("x", "y", "z"),
-                    skip_nans=True,
-                )
-            )
-            captured_at = wall_clock_timestamp()
-            scan = PointCloudScan(
+        # Recording delegates all pointcloud work to the dedicated pointcloud action server.
+        self._capture_client.wait_for_server()
+        goal = CapturePointCloud.Goal()
+        goal.label = label
+        goal.publish_planning_cloud = bool(publish_planning_cloud)
+        goal.save_artifacts = bool(save_to_session)
+        goal.artifact_root = str(
+            artifact_root if artifact_root is not None else self._artifact_path
+        )
+        goal_handle = wait_future(self._capture_client.send_goal_async(goal))
+        if not goal_handle.accepted:
+            raise RuntimeError("Pointcloud capture goal was rejected")
+        action_result = wait_future(goal_handle.get_result_async()).result
+        if not action_result.success:
+            raise RuntimeError(action_result.message)
+        return [
+            PointCloudScan(
                 label=label,
-                camera_key=camera.key,
-                cloud=cloud["msg"],
-                point_count=point_count,
-                timestamp=captured_at,
+                camera_key=camera_key,
+                artifact_path=Path(artifact_path),
+                point_count=int(point_count),
+                timestamp=float(timestamp),
+                timestamp_local=timestamp_local,
             )
-            if save_to_session:
-                session_root = artifact_root if artifact_root is not None else self._artifact_path
-                scan.artifact_path = self._next_existing_name(
-                    _camera_dir(session_root, scan.camera_key) / f"{scan.label}.pcd"
-                )
-                write_pointcloud_pcd(scan.artifact_path, scan.cloud)
-            scans.append(scan)
-            if publish_planning_cloud and camera.key == "in_hand":
-                self._planning_cloud_pub.publish(cloud["msg"])
-                self.get_logger().info(
-                    f"Published planning cloud from {camera.key} with {point_count} points."
-                )
-        return scans
+            for camera_key, artifact_path, point_count, timestamp, timestamp_local in zip(
+                action_result.camera_keys,
+                action_result.artifact_paths,
+                action_result.point_counts,
+                action_result.timestamps,
+                action_result.timestamp_locals,
+                strict=True,
+            )
+            if artifact_path
+        ]
 
     def _next_existing_name(self, path: Path) -> Path:
         if not path.exists():
@@ -500,6 +434,9 @@ class RecordingNode(Node):
             self.destroy_subscription(subscription)
         self.destroy_subscription(self._audio_subscription)
         self.destroy_subscription(self._cutting_subscription)
+        if self._startup_capture_timer is not None:
+            self.destroy_timer(self._startup_capture_timer)
+            self._startup_capture_timer = None
         if self._active_run is not None:
             self._stop_recording_run()
         if not self._save_artifacts_enabled:
