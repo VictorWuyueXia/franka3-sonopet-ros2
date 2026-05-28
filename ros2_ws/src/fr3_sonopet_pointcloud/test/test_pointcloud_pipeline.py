@@ -119,7 +119,7 @@ def test_node_source_rejects_stale_vendor_state_and_owns_capture_action():
         package_root.parent / "fr3_sonopet_interfaces" / "action" / "CapturePointCloud.action"
     ).read_text(encoding="utf-8")
 
-    assert 'CAPTURE_ACTION = "/sonopet/capture_pointcloud"' in node
+    assert 'CAPTURE_ACTION = "/realsense/capture_pointcloud"' in node
     assert 'VENDOR_STALE_TOPIC = "/sonopet/vendor_joint_state_stale"' in node
     assert "VENDOR_LIVE_MAX_AGE_S = 0.5" in node
     assert 'STALE_MESSAGE = "Cannot capture pointcloud: cannot get joint state"' in node

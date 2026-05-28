@@ -149,6 +149,7 @@ def generate_launch_description():
             moveit_controllers,
             planning_scene_monitor_parameters,
         ],
+        remappings=[("/compute_ik", "/fr3/compute_ik")],
     )
 
     robot_state_publisher = Node(

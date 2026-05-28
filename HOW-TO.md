@@ -263,14 +263,14 @@ The recorder node starts with **Real arm** / **Full boot**, but it only writes f
 
 ```bash
 source scripts/source_ubuntu24_ros_jazzy.sh
-ros2 action list -t | grep /sonopet/record_experiment
+ros2 action list -t | grep /realsense/record_experiment
 ros2 interface show fr3_sonopet_interfaces/action/RecordExperiment
 ```
 
 **Start a run** (optional; recording also arms from `/sonopet/cutting`):
 
 ```bash
-ros2 action send_goal /sonopet/record_experiment \
+ros2 action send_goal /realsense/record_experiment \
   fr3_sonopet_interfaces/action/RecordExperiment \
   "{run_id: '', start: true}"
 ```
@@ -278,7 +278,7 @@ ros2 action send_goal /sonopet/record_experiment \
 **Stop the same run:**
 
 ```bash
-ros2 action send_goal /sonopet/record_experiment \
+ros2 action send_goal /realsense/record_experiment \
   fr3_sonopet_interfaces/action/RecordExperiment \
   "{run_id: '', start: false}"
 ```
@@ -328,4 +328,3 @@ For arm-only checks without sensors, use **Fake arm** (section 4) in terminal 1 
 9. **No camera images** — wrong serial in `cameras.yaml`, USB bandwidth, or camera unplugged; check `ros2 topic list` for `/RealSense_D405/...`.
 10. **Empty Planning PointCloud** — use **Full boot** (`rviz:=true`); wait for planner capture log; confirm TF from in-hand camera to `fr3_link0`.
 11. **Click does nothing** — toolbar **Publish Point** on the planning cloud; read `raster_planner_node` for `Raster plan rejected:`.
-

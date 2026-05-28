@@ -38,7 +38,7 @@ from fr3_sonopet_pointcloud.cloud_processing import (
     write_pointcloud_metadata,
 )
 
-CAPTURE_ACTION = "/sonopet/capture_pointcloud"
+CAPTURE_ACTION = "/realsense/capture_pointcloud"
 CAPTURED_PLANNING_CLOUD_TOPIC = "/sonopet/captured_planning_cloud"
 PLANNING_CLOUD_TOPIC = "/sonopet/planning_cloud"
 VENDOR_STALE_TOPIC = "/sonopet/vendor_joint_state_stale"

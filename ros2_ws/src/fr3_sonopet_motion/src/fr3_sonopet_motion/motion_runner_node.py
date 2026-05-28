@@ -170,21 +170,21 @@ class MotionRunnerNode(Node):
         self._preview_server = ActionServer(
             self,
             PreviewMotion,
-            "/sonopet/preview_motion",
+            "/fr3/preview_motion",
             lambda goal_handle: self._run_motion(goal_handle, execute=False),
             callback_group=self._callback_group,
         )
         self._execute_server = ActionServer(
             self,
             ExecuteMotion,
-            "/sonopet/execute_motion",
+            "/fr3/execute_motion",
             lambda goal_handle: self._run_motion(goal_handle, execute=True),
             callback_group=self._callback_group,
         )
         self._stop_server = ActionServer(
             self,
             StopMotion,
-            "/sonopet/stop_motion",
+            "/fr3/stop_motion",
             self._run_stop_recovery,
             callback_group=self._callback_group,
         )

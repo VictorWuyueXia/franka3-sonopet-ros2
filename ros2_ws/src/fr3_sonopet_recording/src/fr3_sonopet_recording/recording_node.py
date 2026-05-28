@@ -136,19 +136,19 @@ class RecordingNode(Node):
         self._record_server = ActionServer(
             self,
             RecordExperiment,
-            "/sonopet/record_experiment",
+            "/realsense/record_experiment",
             self._execute_record,
             callback_group=self._callback_group,
         )
         self._capture_client = ActionClient(
             self,
             CapturePointCloud,
-            "/sonopet/capture_pointcloud",
+            "/realsense/capture_pointcloud",
             callback_group=self._callback_group,
         )
         self._artifact_saving_service = self.create_service(
             SetBool,
-            "/sonopet/set_artifact_saving",
+            "/set_artifact_saving",
             self._set_artifact_saving,
             callback_group=self._callback_group,
         )

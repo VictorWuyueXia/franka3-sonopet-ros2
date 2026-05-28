@@ -5,8 +5,8 @@ recording:
     in_hand:
       rgb_topic: /RealSense_D405/in_hand/color/image_rect_raw
       pointcloud_topic: /RealSense_D405/in_hand/depth/color/points
-      parameter_service: /RealSense_D405/in_hand/set_parameters
+      parameter_service: /realsense/RealSense_D405/in_hand/set_parameters
     fixed:
       rgb_topic: /RealSense_D405/fixed/color/image_rect_raw
       pointcloud_topic: /RealSense_D405/fixed/depth/color/points
-      parameter_service: /RealSense_D405/fixed/set_parameters
+      parameter_service: /realsense/RealSense_D405/fixed/set_parameters

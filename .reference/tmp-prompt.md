@@ -126,6 +126,18 @@ Adhere strictly to our coding style descipline, write your logic in compact stre
 Also explain how does the motion control node, the vendor fr3 node, and the physical robot interact with each other to achieve control.
 
 
+change globally to re-domain the topics:
+/sonopet/capture_pointcloud	--> /realsense/capture_pointcloud
+/sonopet/build_raster_plan	--> /fr3/build_raster_plan
+/sonopet/preview_motion	-->  /fr3/preview_motion
+/sonopet/execute_motion	-->  /fr3/execute_motion	
+/sonopet/stop_motion	-->  /fr3/stop_motion	
+/sonopet/record_experiment	-->  /realsense/record_experiment	
+/sonopet/set_artifact_saving	-->  /set_artifact_saving	
+/RealSense_D405/in_hand/set_parameters	-->  /realsense/RealSense_D405/in_hand/set_parameters	
+/RealSense_D405/fixed/set_parameters	-->  /realsense/RealSense_D405/fixed/set_parameters	
+/compute_ik	-->  /fr3/compute_ik	
+
 
 
 + let motion node remember its beginning pose
@@ -154,9 +166,11 @@ Also explain how does the motion control node, the vendor fr3 node, and the phys
 + preview TCP name show
 + pointcloud scan at beginning and end of raster
 
-- load same intrinsics
 - seperate topics domain /sonopet and /fr3 for topics like /sonopet/vendor_joint_state_stale
-- run alias
+
+- remember first position and always return to it
 - sonopet built in
+- load same intrinsics
+- run alias
 - IK then FK to check accuracy by supervisor
 - what happens if I publish another point while motion

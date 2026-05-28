@@ -8,7 +8,7 @@ def test_recording_node_delegates_pointcloud_capture_to_action_client():
     ).read_text(encoding="utf-8")
 
     assert "ActionClient(" in node_source
-    assert '"/sonopet/capture_pointcloud"' in node_source
+    assert '"/realsense/capture_pointcloud"' in node_source
     assert "goal.artifact_root = str(" in node_source
     assert "ActionServer(\n            self,\n            CapturePointCloud" not in node_source
     assert "write_pointcloud_pcd" not in node_source
@@ -23,7 +23,7 @@ def test_recording_node_exposes_cutting_workflow_and_artifact_discard():
         package_root / "src" / "fr3_sonopet_recording" / "recording_node.py"
     ).read_text(encoding="utf-8")
 
-    assert "/sonopet/set_artifact_saving" in node_source
+    assert "/set_artifact_saving" in node_source
     assert "/sonopet/cutting" in node_source
     assert "class ActiveRecordingRun" in node_source
     assert "def _prepare_session_folder(self) -> None:" in node_source

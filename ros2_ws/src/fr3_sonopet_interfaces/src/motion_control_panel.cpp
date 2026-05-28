@@ -179,21 +179,21 @@ public:
     auto rviz_node = getDisplayContext()->getRosNodeAbstraction().lock()->get_raw_node();
     preview_client_ = rclcpp_action::create_client<PreviewMotion>(
       rviz_node,
-      "/sonopet/preview_motion");
+      "/fr3/preview_motion");
     execute_client_ = rclcpp_action::create_client<ExecuteMotion>(
       rviz_node,
-      "/sonopet/execute_motion");
+      "/fr3/execute_motion");
     stop_client_ = rclcpp_action::create_client<StopMotion>(
       rviz_node,
-      "/sonopet/stop_motion");
+      "/fr3/stop_motion");
     capture_client_ = rclcpp_action::create_client<CapturePointCloud>(
       rviz_node,
-      "/sonopet/capture_pointcloud");
+      "/realsense/capture_pointcloud");
     build_raster_client_ = rclcpp_action::create_client<BuildRasterPlan>(
       rviz_node,
-      "/sonopet/build_raster_plan");
+      "/fr3/build_raster_plan");
     artifact_saving_client_ = rviz_node->create_client<std_srvs::srv::SetBool>(
-      "/sonopet/set_artifact_saving");
+      "/set_artifact_saving");
     preview_button_->setEnabled(true);
     execute_button_->setEnabled(true);
     stop_button_->setEnabled(true);

@@ -84,7 +84,7 @@ class RasterPlannerNode(Node):
         self._build_server = ActionServer(
             self,
             BuildRasterPlan,
-            "/sonopet/build_raster_plan",
+            "/fr3/build_raster_plan",
             self._execute_build_plan,
         )
         self.get_logger().info(

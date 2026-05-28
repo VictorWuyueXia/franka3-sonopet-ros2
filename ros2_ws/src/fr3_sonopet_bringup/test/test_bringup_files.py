@@ -105,6 +105,7 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert '"frame_prefix": "preview/"' in franka_launch
     assert '"--frame-id", "base"' in franka_launch
     assert '"--child-frame-id", "preview/base"' in franka_launch
+    assert 'remappings=[("/compute_ik", "/fr3/compute_ik")]' in franka_launch
     assert '"frame_prefix": "preview/"' in sonopet_tcp_launch
     pointcloud_arg = 'launch_arguments={"pointcloud_enable": LaunchConfiguration("rviz")}'
     assert pointcloud_arg in experiment_launch
@@ -161,6 +162,6 @@ def test_motion_panel_plugin_is_exported_from_interfaces_package():
     assert 'name == "TF"' in panel
     assert "Re-sample Raster" in panel
     assert "BuildRasterPlan" in panel
-    assert "/sonopet/build_raster_plan" in panel
+    assert "/fr3/build_raster_plan" in panel
     assert "goal.update_selected_center = false" in panel
     assert "QDoubleValidator(-1000.0, 1000.0, 3, dig_depth_mm_)" in panel
