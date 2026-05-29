@@ -17,8 +17,9 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
 from sensor_msgs.msg import Image
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool
 
 from fr3_sonopet_recording.artifact_writers import write_json
@@ -30,6 +31,8 @@ from fr3_sonopet_recording.recording_config import (
     recording_topics,
     wall_clock_timestamp,
 )
+
+ARTIFACT_PATH_TOPIC = "/sonopet/artifact_path"
 
 
 @dataclass
@@ -109,6 +112,17 @@ class RecordingNode(Node):
         )
 
     def _runtime(self) -> None:
+        artifact_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+        self._artifact_path_pub = self.create_publisher(
+            String,
+            ARTIFACT_PATH_TOPIC,
+            artifact_qos,
+        )
+        self._artifact_path_pub.publish(String(data=str(self._artifact_path)))
         self._rgb_subscriptions = [
             self.create_subscription(
                 Image,

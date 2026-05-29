@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from threading import Condition, Event, RLock, Thread
 from time import monotonic
 
@@ -24,8 +25,9 @@ from rclpy.node import Node
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
-from trajectory_msgs.msg import JointTrajectory
+from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
+from trajectory_msgs.msg import JointTrajectory
 
 from fr3_sonopet_motion.motion_geometry import (
     BASE_FRAME,
@@ -51,6 +53,9 @@ from fr3_sonopet_motion.operator_policy import EXECUTE_TOKEN
 
 MOTION_INPUT_ERROR = "Motion runner input is incomplete or inconsistent."
 MOTION_VENDOR_ERROR = "Motion vendor command failed."
+STOP_RECOVERY_MESSAGE = (
+    "Execution stopped by operator; recovery is handled by the stop action."
+)
 JOINT_STATE_SILENCE_S = 0.5
 JOINT_STATE_MONITOR_PERIOD_S = 0.1
 WAITING_FOR_JOINT_STATES = "waiting_for_joint_states"
@@ -60,11 +65,21 @@ SWITCH_CONTROLLER_SERVICE = "/controller_manager/switch_controller"
 FRANKA_HARDWARE_COMPONENT = "FrankaHardwareInterface"
 CUTTING_TOPIC = "/sonopet/cutting"
 VENDOR_JOINT_STATE_STALE_TOPIC = "/sonopet/vendor_joint_state_stale"
+SET_BEGINNING_POSE_SERVICE = "/fr3/set_beginning_pose"
 FRANKA_RECOVERY_CONTROLLERS = (
     "franka_robot_state_broadcaster",
     "joint_state_broadcaster",
     "fr3_arm_controller",
 )
+
+
+@dataclass(frozen=True)
+class BeginningPose:
+    """Frozen joint and TCP reference used for all raster orientation and return motion."""
+
+    joint_seed: dict[str, float]
+    base_from_tcp: np.ndarray
+    link_from_tcp: np.ndarray
 
 
 class MotionRunnerNode(Node):
@@ -83,9 +98,7 @@ class MotionRunnerNode(Node):
         self._joint_states_available = False
         self._joint_states_lost = False
         self._recovery_active = False
-        self._beginning_seed: dict[str, float] | None = None
-        self._beginning_base_from_tcp: np.ndarray | None = None
-        self._beginning_link_from_tcp: np.ndarray | None = None
+        self._beginning_pose: BeginningPose | None = None
         self._active_execute = False
         self._active_preview = False
         self._active_controller_handle = None
@@ -112,12 +125,7 @@ class MotionRunnerNode(Node):
         self._plan_sub = self.create_subscription(
             RasterPlan,
             RASTER_PLAN_TOPIC,
-            lambda plan: (
-                setattr(self, "_latest_plan", plan),
-                setattr(self, "_beginning_seed", None),
-                setattr(self, "_beginning_base_from_tcp", None),
-                setattr(self, "_beginning_link_from_tcp", None),
-            ),
+            lambda plan: setattr(self, "_latest_plan", plan),
             10,
             callback_group=self._callback_group,
         )
@@ -166,7 +174,13 @@ class MotionRunnerNode(Node):
             SWITCH_CONTROLLER_SERVICE,
             callback_group=self._callback_group,
         )
-        # Preview compiles only; execute compiles the same path and streams it to the vendor controller.
+        self._set_beginning_pose_service = self.create_service(
+            Trigger,
+            SET_BEGINNING_POSE_SERVICE,
+            self._set_beginning_pose,
+            callback_group=self._callback_group,
+        )
+        # Preview compiles only; execute compiles and streams through the vendor controller.
         self._preview_server = ActionServer(
             self,
             PreviewMotion,
@@ -203,8 +217,11 @@ class MotionRunnerNode(Node):
             self._joint_state_received_s = monotonic()
             self._joint_states_available = True
             self._joint_states_lost = False
+            beginning_pose_missing = self._beginning_pose is None
             preview_active = self._active_preview
             self._joint_state_condition.notify_all()
+        if beginning_pose_missing:
+            self._cache_beginning_pose(joint_state)
         if recovered:
             self.get_logger().info("Vendor joint states recovered.")
         self._vendor_stale_pub.publish(Bool(data=False))
@@ -221,9 +238,6 @@ class MotionRunnerNode(Node):
             if monotonic() - self._joint_state_received_s <= JOINT_STATE_SILENCE_S:
                 return
             self._latest_joint_state = None
-            self._beginning_seed = None
-            self._beginning_base_from_tcp = None
-            self._beginning_link_from_tcp = None
             self._joint_states_available = False
             self._joint_states_lost = True
             self._joint_state_condition.notify_all()
@@ -268,7 +282,9 @@ class MotionRunnerNode(Node):
     def _send_franka_error_recovery(self) -> None:
         if not self._franka_recovery_client.wait_for_server(timeout_sec=JOINT_STATE_SILENCE_S):
             raise RuntimeError(f"{FRANKA_ERROR_RECOVERY_ACTION} is unavailable")
-        goal_handle = wait_future(self._franka_recovery_client.send_goal_async(ErrorRecovery.Goal()))
+        goal_handle = wait_future(
+            self._franka_recovery_client.send_goal_async(ErrorRecovery.Goal())
+        )
         if not goal_handle.accepted:
             raise RuntimeError("Franka error recovery goal was rejected")
         recovery_result = wait_future(goal_handle.get_result_async())
@@ -298,10 +314,18 @@ class MotionRunnerNode(Node):
         if not response.ok:
             raise RuntimeError(f"Controller activation failed: {response.message}")
 
+    def _joint_state_is_fresh_locked(self) -> bool:
+        return (
+            self._joint_states_available
+            and self._latest_joint_state is not None
+            and self._joint_state_received_s is not None
+            and monotonic() - self._joint_state_received_s <= JOINT_STATE_SILENCE_S
+        )
+
     def _wait_for_vendor_joint_state(self, goal_handle, feedback_kind: str) -> JointState | None:
         # Motion always compiles from a current physical robot state, never from a stale cache.
         with self._state_lock:
-            if self._joint_states_available and self._latest_joint_state is not None:
+            if self._joint_state_is_fresh_locked():
                 return self._latest_joint_state
             observed_count = self._joint_state_count
         while True:
@@ -315,8 +339,7 @@ class MotionRunnerNode(Node):
                 goal_handle.publish_feedback(StopMotion.Feedback(phase=WAITING_FOR_JOINT_STATES))
             with self._joint_state_condition:
                 if (
-                    self._joint_states_available
-                    and self._latest_joint_state is not None
+                    self._joint_state_is_fresh_locked()
                     and self._joint_state_count > observed_count
                 ):
                     return self._latest_joint_state
@@ -324,8 +347,75 @@ class MotionRunnerNode(Node):
                     return None
                 self._joint_state_condition.wait(JOINT_STATE_MONITOR_PERIOD_S)
 
+    def _set_beginning_pose(self, _request, response):
+        # Operator pose setting is an explicit overwrite of the node-lifetime return target.
+        try:
+            with self._state_lock:
+                if not self._joint_state_is_fresh_locked():
+                    raise RuntimeError(
+                        "Cannot set beginning pose: vendor joint state is unavailable"
+                    )
+                joint_state = self._latest_joint_state
+            self._cache_beginning_pose(joint_state)
+        except Exception as exc:
+            response.success = False
+            response.message = str(exc)
+            return response
+        response.success = True
+        response.message = "Beginning pose updated from current robot state."
+        return response
+
+    def _cache_beginning_pose(self, joint_state: JointState) -> None:
+        # The cached beginning pose binds joint return and TCP orientation to the same robot sample.
+        beginning_pose = self._beginning_pose_from_joint_state(joint_state)
+        with self._state_lock:
+            self._beginning_pose = beginning_pose
+        self.get_logger().info("Cached beginning pose from current robot state.")
+
+    def _require_beginning_pose(self) -> BeginningPose:
+        with self._state_lock:
+            beginning_pose = self._beginning_pose
+        if beginning_pose is None:
+            raise RuntimeError("Beginning pose has not been cached")
+        return beginning_pose
+
+    def _beginning_pose_from_joint_state(self, joint_state: JointState) -> BeginningPose:
+        seed_state = dict(zip(joint_state.name, joint_state.position, strict=True))
+        base_from_tcp = self._lookup_transform_matrix(BASE_FRAME, TOOL_FRAME)
+        base_from_link = self._lookup_transform_matrix(BASE_FRAME, IK_LINK_FRAME)
+        return BeginningPose(
+            joint_seed={name: float(seed_state[name]) for name in JOINT_NAMES},
+            base_from_tcp=base_from_tcp,
+            link_from_tcp=np.linalg.inv(base_from_link) @ base_from_tcp,
+        )
+
+    def _lookup_transform_matrix(self, target_frame: str, source_frame: str) -> np.ndarray:
+        # TF snapshots are converted once into homogeneous matrices for all downstream geometry.
+        transform = self._tf_buffer.lookup_transform(target_frame, source_frame, Time()).transform
+        matrix = np.eye(4, dtype=np.float64)
+        matrix[:3, :3] = rotation_matrix_from_quaternion(
+            np.array(
+                [
+                    transform.rotation.x,
+                    transform.rotation.y,
+                    transform.rotation.z,
+                    transform.rotation.w,
+                ],
+                dtype=np.float64,
+            )
+        )
+        matrix[:3, 3] = np.array(
+            [
+                transform.translation.x,
+                transform.translation.y,
+                transform.translation.z,
+            ],
+            dtype=np.float64,
+        )
+        return matrix
+
     def _run_motion(self, goal_handle, execute: bool):
-        """Compile the latest raster plan and optionally stream each segment to the FR3 controller."""
+        """Compile the latest raster plan and optionally stream it to the FR3 controller."""
         result = ExecuteMotion.Result() if execute else PreviewMotion.Result()
         if execute and goal_handle.request.confirmation_token.strip() != EXECUTE_TOKEN:
             goal_handle.abort()
@@ -352,11 +442,10 @@ class MotionRunnerNode(Node):
             or len(self._latest_plan.poses.poses) == 0
         ):
             raise RuntimeError(MOTION_INPUT_ERROR)
-        joint_state = self._wait_for_vendor_joint_state(
+        if self._wait_for_vendor_joint_state(
             goal_handle,
             "execute" if execute else "preview",
-        )
-        if joint_state is None:
+        ) is None:
             with self._state_lock:
                 self._active_execute = False
                 self._active_preview = False
@@ -371,60 +460,10 @@ class MotionRunnerNode(Node):
         if execute:
             self._controller_client.wait_for_server()
 
-        # The first preview or execute after a new raster plan freezes the scan's starting pose.
-        if self._beginning_seed is None:
-            seed_state = dict(zip(joint_state.name, joint_state.position, strict=True))
-            base_from_tcp_msg = self._tf_buffer.lookup_transform(BASE_FRAME, TOOL_FRAME, Time()).transform
-            base_from_link_msg = self._tf_buffer.lookup_transform(
-                BASE_FRAME, IK_LINK_FRAME, Time()
-            ).transform
-            base_from_tcp = np.eye(4, dtype=np.float64)
-            base_from_link = np.eye(4, dtype=np.float64)
-            base_from_tcp[:3, :3] = rotation_matrix_from_quaternion(
-                np.array(
-                    [
-                        base_from_tcp_msg.rotation.x,
-                        base_from_tcp_msg.rotation.y,
-                        base_from_tcp_msg.rotation.z,
-                        base_from_tcp_msg.rotation.w,
-                    ],
-                    dtype=np.float64,
-                )
-            )
-            base_from_link[:3, :3] = rotation_matrix_from_quaternion(
-                np.array(
-                    [
-                        base_from_link_msg.rotation.x,
-                        base_from_link_msg.rotation.y,
-                        base_from_link_msg.rotation.z,
-                        base_from_link_msg.rotation.w,
-                    ],
-                    dtype=np.float64,
-                )
-            )
-            base_from_tcp[:3, 3] = np.array(
-                [
-                    base_from_tcp_msg.translation.x,
-                    base_from_tcp_msg.translation.y,
-                    base_from_tcp_msg.translation.z,
-                ],
-                dtype=np.float64,
-            )
-            base_from_link[:3, 3] = np.array(
-                [
-                    base_from_link_msg.translation.x,
-                    base_from_link_msg.translation.y,
-                    base_from_link_msg.translation.z,
-                ],
-                dtype=np.float64,
-            )
-            self._beginning_seed = {name: float(seed_state[name]) for name in JOINT_NAMES}
-            self._beginning_base_from_tcp = base_from_tcp
-            self._beginning_link_from_tcp = np.linalg.inv(base_from_link) @ base_from_tcp
-
-        seed = dict(self._beginning_seed)
-        base_from_tcp = self._beginning_base_from_tcp
-        link_from_tcp = self._beginning_link_from_tcp
+        beginning_pose = self._require_beginning_pose()
+        seed = dict(beginning_pose.joint_seed)
+        base_from_tcp = beginning_pose.base_from_tcp
+        link_from_tcp = beginning_pose.link_from_tcp
         idle_values = list(self.get_parameter("idle_joint_positions").value)
         idle_seed = {name: float(idle_values[index]) for index, name in enumerate(JOINT_NAMES)}
         motion_speed_m_s = float(self.get_parameter("motion_speed_m_s").value)
@@ -435,7 +474,9 @@ class MotionRunnerNode(Node):
         fk_request.header.frame_id = BASE_FRAME
         fk_request.fk_link_names = [IK_LINK_FRAME]
         fk_request.robot_state.joint_state.name = list(JOINT_NAMES)
-        fk_request.robot_state.joint_state.position = [float(idle_seed[name]) for name in JOINT_NAMES]
+        fk_request.robot_state.joint_state.position = [
+            float(idle_seed[name]) for name in JOINT_NAMES
+        ]
         fk_response = wait_future(self._fk_client.call_async(fk_request))
         if fk_response.error_code.val != MoveItErrorCodes.SUCCESS:
             raise RuntimeError(MOTION_VENDOR_ERROR)
@@ -464,7 +505,11 @@ class MotionRunnerNode(Node):
             seed,
             idle_seed,
             max(
-                float(np.linalg.norm((idle_base_from_link @ link_from_tcp)[:3, 3] - base_from_tcp[:3, 3]))
+                float(
+                    np.linalg.norm(
+                        (idle_base_from_link @ link_from_tcp)[:3, 3] - base_from_tcp[:3, 3]
+                    )
+                )
                 / motion_speed_m_s,
                 0.05,
             ),
@@ -533,7 +578,7 @@ class MotionRunnerNode(Node):
         return_to_start.joint_names = list(JOINT_NAMES)
         return_to_start.points = joint_interpolation_points(
             seed,
-            self._beginning_seed,
+            beginning_pose.joint_seed,
             max(
                 float(np.linalg.norm(raster[-1][:3, 3] - base_from_tcp[:3, 3])) / motion_speed_m_s,
                 0.05,
@@ -560,7 +605,7 @@ class MotionRunnerNode(Node):
                             self._active_execute = False
                         goal_handle.abort()
                         result.success = False
-                        result.message = "Execution stopped by operator; recovery is handled by the stop action."
+                        result.message = STOP_RECOVERY_MESSAGE
                         return result
                     feedback = ExecuteMotion.Feedback()
                     feedback.active_segment = segment_name
@@ -574,9 +619,7 @@ class MotionRunnerNode(Node):
                                 self._active_execute = False
                             goal_handle.abort()
                             result.success = False
-                            result.message = (
-                                "Execution stopped by operator; recovery is handled by the stop action."
-                            )
+                            result.message = STOP_RECOVERY_MESSAGE
                             return result
                         controller_result = self._send_controller_trajectory(trajectory)
                         if self._stop_requested.is_set():
@@ -584,9 +627,7 @@ class MotionRunnerNode(Node):
                                 self._active_execute = False
                             goal_handle.abort()
                             result.success = False
-                            result.message = (
-                                "Execution stopped by operator; recovery is handled by the stop action."
-                            )
+                            result.message = STOP_RECOVERY_MESSAGE
                             return result
                         if controller_result == FollowJointTrajectory.Result.SUCCESSFUL:
                             break
@@ -653,7 +694,11 @@ class MotionRunnerNode(Node):
                 )
             return not self._joint_states_available
 
-    def _publish_preview_playback(self, goal_handle, trajectories: list[tuple[str, JointTrajectory]]) -> bool:
+    def _publish_preview_playback(
+        self,
+        goal_handle,
+        trajectories: list[tuple[str, JointTrajectory]],
+    ) -> bool:
         for segment_name, trajectory in trajectories:
             feedback = PreviewMotion.Feedback(phase=segment_name)
             goal_handle.publish_feedback(feedback)
@@ -661,7 +706,10 @@ class MotionRunnerNode(Node):
             for point in trajectory.points:
                 if self._stop_requested.is_set():
                     return False
-                point_s = float(point.time_from_start.sec) + float(point.time_from_start.nanosec) * 1e-9
+                point_s = (
+                    float(point.time_from_start.sec)
+                    + float(point.time_from_start.nanosec) * 1e-9
+                )
                 if previous_s is not None:
                     Event().wait(max(point_s - previous_s, 0.0))
                 if self._stop_requested.is_set():
@@ -705,7 +753,9 @@ class MotionRunnerNode(Node):
         for trajectory in self._compute_recovery_trajectory():
             controller_goal = FollowJointTrajectory.Goal()
             controller_goal.trajectory = trajectory
-            controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
+            controller_handle = wait_future(
+                self._controller_client.send_goal_async(controller_goal)
+            )
             if not controller_handle.accepted:
                 raise RuntimeError(MOTION_VENDOR_ERROR)
             controller_result = wait_future(controller_handle.get_result_async()).result
@@ -723,42 +773,23 @@ class MotionRunnerNode(Node):
     def _compute_recovery_trajectory(self) -> list[JointTrajectory]:
         if (
             self._latest_joint_state is None
-            or self._beginning_seed is None
-            or self._beginning_base_from_tcp is None
-            or self._beginning_link_from_tcp is None
+            or self._beginning_pose is None
         ):
             raise RuntimeError(MOTION_INPUT_ERROR)
+        beginning_pose = self._require_beginning_pose()
         self._ik_client.wait_for_service()
         self._controller_client.wait_for_server()
-        current_seed = dict(zip(self._latest_joint_state.name, self._latest_joint_state.position, strict=True))
+        current_seed = dict(
+            zip(self._latest_joint_state.name, self._latest_joint_state.position, strict=True)
+        )
         seed = {name: float(current_seed[name]) for name in JOINT_NAMES}
         motion_speed_m_s = float(self.get_parameter("motion_speed_m_s").value)
-        base_from_tcp_msg = self._tf_buffer.lookup_transform(BASE_FRAME, TOOL_FRAME, Time()).transform
-        base_from_tcp = np.eye(4, dtype=np.float64)
-        base_from_tcp[:3, :3] = rotation_matrix_from_quaternion(
-            np.array(
-                [
-                    base_from_tcp_msg.rotation.x,
-                    base_from_tcp_msg.rotation.y,
-                    base_from_tcp_msg.rotation.z,
-                    base_from_tcp_msg.rotation.w,
-                ],
-                dtype=np.float64,
-            )
-        )
-        base_from_tcp[:3, 3] = np.array(
-            [
-                base_from_tcp_msg.translation.x,
-                base_from_tcp_msg.translation.y,
-                base_from_tcp_msg.translation.z,
-            ],
-            dtype=np.float64,
-        )
+        base_from_tcp = self._lookup_transform_matrix(BASE_FRAME, TOOL_FRAME)
         retract = np.array(base_from_tcp, dtype=np.float64, copy=True)
         retract[2, 3] += float(self.get_parameter("parking_lift_m").value)
         solved_points: list[dict[str, float]] = []
         for tcp_matrix in densified_matrices([base_from_tcp, retract]):
-            base_from_ik_link = tcp_matrix @ np.linalg.inv(self._beginning_link_from_tcp)
+            base_from_ik_link = tcp_matrix @ np.linalg.inv(beginning_pose.link_from_tcp)
             sec = int(math.floor(IK_TIMEOUT_S))
             request = GetPositionIK.Request()
             request.ik_request.group_name = PLANNING_GROUP
@@ -768,9 +799,13 @@ class MotionRunnerNode(Node):
             request.ik_request.pose_stamped.pose.position.x = float(base_from_ik_link[0, 3])
             request.ik_request.pose_stamped.pose.position.y = float(base_from_ik_link[1, 3])
             request.ik_request.pose_stamped.pose.position.z = float(base_from_ik_link[2, 3])
-            request.ik_request.pose_stamped.pose.orientation = quaternion_from_matrix(base_from_ik_link)
+            request.ik_request.pose_stamped.pose.orientation = quaternion_from_matrix(
+                base_from_ik_link
+            )
             request.ik_request.robot_state.joint_state.name = list(JOINT_NAMES)
-            request.ik_request.robot_state.joint_state.position = [float(seed[name]) for name in JOINT_NAMES]
+            request.ik_request.robot_state.joint_state.position = [
+                float(seed[name]) for name in JOINT_NAMES
+            ]
             request.ik_request.avoid_collisions = True
             request.ik_request.timeout = Duration(
                 sec=sec,
@@ -780,7 +815,11 @@ class MotionRunnerNode(Node):
             if response.error_code.val != MoveItErrorCodes.SUCCESS:
                 raise RuntimeError(MOTION_VENDOR_ERROR)
             solution_state = dict(
-                zip(response.solution.joint_state.name, response.solution.joint_state.position, strict=True)
+                zip(
+                    response.solution.joint_state.name,
+                    response.solution.joint_state.position,
+                    strict=True,
+                )
             )
             seed = {name: float(solution_state[name]) for name in JOINT_NAMES}
             solved_points.append(dict(seed))
@@ -792,13 +831,13 @@ class MotionRunnerNode(Node):
             motion_speed_m_s,
         )
         return_distance_m = float(
-            np.linalg.norm(retract[:3, 3] - self._beginning_base_from_tcp[:3, 3])
+            np.linalg.norm(retract[:3, 3] - beginning_pose.base_from_tcp[:3, 3])
         )
         return_trajectory = JointTrajectory()
         return_trajectory.joint_names = list(JOINT_NAMES)
         return_trajectory.points = joint_interpolation_points(
             seed,
-            self._beginning_seed,
+            beginning_pose.joint_seed,
             max(return_distance_m / motion_speed_m_s, 0.05),
         )
         return [retract_trajectory, return_trajectory]

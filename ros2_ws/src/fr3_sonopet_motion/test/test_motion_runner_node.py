@@ -3,10 +3,6 @@ from pathlib import Path
 
 import numpy as np
 from fr3_sonopet_interfaces.msg import RasterPlan
-from geometry_msgs.msg import Pose, Quaternion
-from std_msgs.msg import Header
-
-from fr3_sonopet_motion.operator_policy import EXECUTE_TOKEN
 from fr3_sonopet_motion.motion_geometry import (
     JOINT_NAMES,
     PREVIEW_JOINT_STATES_TOPIC,
@@ -17,6 +13,9 @@ from fr3_sonopet_motion.motion_geometry import (
     rotation_matrix_from_quaternion,
     staged_cartesian_segments,
 )
+from fr3_sonopet_motion.operator_policy import EXECUTE_TOKEN
+from geometry_msgs.msg import Pose, Quaternion
+from std_msgs.msg import Header
 
 
 def _plan_from_positions(positions: list[tuple[float, float, float]]) -> RasterPlan:
@@ -172,15 +171,29 @@ def test_execute_token_and_beginning_pose_latch_are_encoded():
     ).read_text(encoding="utf-8")
 
     assert EXECUTE_TOKEN == "E"
-    assert 'setattr(self, "_beginning_seed", None)' in runner
-    assert "if self._beginning_seed is None:" in runner
+    assert "@dataclass(frozen=True)" in runner
+    assert "class BeginningPose:" in runner
+    assert "self._beginning_pose: BeginningPose | None = None" in runner
+    assert 'lambda plan: setattr(self, "_latest_plan", plan)' in runner
+    assert "self._set_beginning_pose_service = self.create_service(" in runner
+    assert "Trigger" in runner
+    assert 'SET_BEGINNING_POSE_SERVICE = "/fr3/set_beginning_pose"' in runner
+    assert "def _set_beginning_pose(self, _request, response):" in runner
+    assert "def _cache_beginning_pose(self, joint_state: JointState) -> None:" in runner
+    assert "def _require_beginning_pose(self) -> BeginningPose:" in runner
+    assert "beginning_pose = self._require_beginning_pose()" in runner
     assert "idle_joint_positions" in runner
     assert 'segment.name == "idle_to_parking" and index == 0' in runner
     assert "solved_points.append(dict(seed))" in runner
+    assert "seed = dict(beginning_pose.joint_seed)" in runner
+    assert "base_from_tcp = beginning_pose.base_from_tcp" in runner
+    assert "link_from_tcp = beginning_pose.link_from_tcp" in runner
+    assert "raster = build_cartesian_segments(self._latest_plan, base_from_tcp)" in runner
     assert "def _run_stop_recovery(self, goal_handle):" in runner
     assert "def _compute_recovery_trajectory(self) -> list[JointTrajectory]:" in runner
     assert 'trajectories.append(("current_to_idle", current_to_idle))' in runner
     assert 'trajectories.append(("return_to_start", return_to_start))' in runner
+    assert "beginning_pose.joint_seed" in runner
     assert "/fr3/stop_motion" in runner
     assert "cancel_goal_async" in runner
     assert "retract[2, 3] +=" in runner
@@ -229,16 +242,17 @@ def test_vendor_joint_state_health_monitor_is_encoded():
     assert "self._start_vendor_recovery()" in runner
 
 
-def test_vendor_joint_state_silence_invalidates_stale_state_and_beginning_pose():
+def test_vendor_joint_state_silence_invalidates_only_live_state():
     package_root = Path(__file__).resolve().parents[1]
     runner = (
         package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
     ).read_text(encoding="utf-8")
 
     assert "self._latest_joint_state = None" in runner
-    assert "self._beginning_seed = None" in runner
-    assert "self._beginning_base_from_tcp = None" in runner
-    assert "self._beginning_link_from_tcp = None" in runner
+    monitor_body = runner.split("def _monitor_joint_states(self) -> None:", 1)[1].split(
+        "def _start_vendor_recovery(self) -> None:", 1
+    )[0]
+    assert "self._beginning_pose = None" not in monitor_body
     assert "self._joint_states_available = False" in runner
     assert "self._joint_states_lost = True" in runner
     assert "self._vendor_stale_pub.publish(Bool(data=True))" in runner
@@ -254,7 +268,10 @@ def test_active_franka_recovery_clients_and_constants_are_encoded():
     ).read_text(encoding="utf-8")
 
     assert "from action_msgs.msg import GoalStatus" in runner
-    assert "from controller_manager_msgs.srv import SetHardwareComponentState, SwitchController" in runner
+    assert (
+        "from controller_manager_msgs.srv import SetHardwareComponentState, SwitchController"
+        in runner
+    )
     assert "from franka_msgs.action import ErrorRecovery" in runner
     assert "from lifecycle_msgs.msg import State" in runner
     assert 'FRANKA_ERROR_RECOVERY_ACTION = "/action_server/error_recovery"' in runner
@@ -299,6 +316,7 @@ def test_motion_package_declares_active_recovery_dependencies():
     assert "<exec_depend>controller_manager_msgs</exec_depend>" in package_xml
     assert "<exec_depend>franka_msgs</exec_depend>" in package_xml
     assert "<exec_depend>lifecycle_msgs</exec_depend>" in package_xml
+    assert "<exec_depend>std_srvs</exec_depend>" in package_xml
 
 
 def test_stop_recovery_return_timing_uses_beginning_pose_distance():
@@ -307,10 +325,10 @@ def test_stop_recovery_return_timing_uses_beginning_pose_distance():
         package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
     ).read_text(encoding="utf-8")
 
-    assert "or self._beginning_base_from_tcp is None" in runner
+    assert "or self._beginning_pose is None" in runner
     assert 'motion_speed_m_s = float(self.get_parameter("motion_speed_m_s").value)' in runner
     assert "return_distance_m = float(" in runner
-    assert "retract[:3, 3] - self._beginning_base_from_tcp[:3, 3]" in runner
+    assert "retract[:3, 3] - beginning_pose.base_from_tcp[:3, 3]" in runner
     assert "max(return_distance_m / motion_speed_m_s, 0.05)" in runner
 
 
@@ -343,7 +361,10 @@ def test_controller_retry_waits_for_vendor_joint_state_recovery():
     assert "raise RuntimeError(MOTION_VENDOR_ERROR)" in runner
     assert "def _send_controller_trajectory(self, trajectory: JointTrajectory) -> int:" in runner
     assert "return controller_result.error_code" in runner
-    assert "def _controller_failure_matches_joint_state_loss(self, observed_count: int) -> bool:" in runner
+    assert (
+        "def _controller_failure_matches_joint_state_loss(self, observed_count: int) -> bool:"
+        in runner
+    )
     assert "return not self._joint_states_available" in runner
 
 

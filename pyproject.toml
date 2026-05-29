@@ -9,6 +9,7 @@ pythonpath = [
     "ros2_ws/src/fr3_sonopet_recording/src",
     "ros2_ws/src/fr3_sonopet_supervisor/src",
     "ros2_ws/src/fr3_sonopet_trajectory/src",
+    "ros2_ws/src/sonopet/src",
 ]
 
 [tool.ruff]

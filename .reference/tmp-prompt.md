@@ -121,7 +121,6 @@ our new stage of development focus on the motion planner node to coordinate with
 
 Check the reference code to see how it does the logic, and align our new code logic to it as close as possible.
 
-Adhere strictly to our coding style descipline, write your logic in compact streamlined line-of-logic files, avoid short wrapper/helper functions, avoid unescesary CLI/configs, avoid fallback values or behaviors, avoid try/with/except.
 
 Also explain how does the motion control node, the vendor fr3 node, and the physical robot interact with each other to achieve control.
 
@@ -166,11 +165,16 @@ change globally to re-domain the topics:
 + preview TCP name show
 + pointcloud scan at beginning and end of raster
 
-- seperate topics domain /sonopet and /fr3 for topics like /sonopet/vendor_joint_state_stale
++ seperate topics domain /sonopet and /fr3 for topics like /sonopet/vendor_joint_state_stale
+
++ sonopet built in
 
 - remember first position and always return to it
-- sonopet built in
 - load same intrinsics
 - run alias
 - IK then FK to check accuracy by supervisor
 - what happens if I publish another point while motion
+
+
+
+Adhere strictly to our coding style descipline, realizing goals with simplest possbile method, write your logic in compact streamlined line-of-logic files, avoid short wrapper/helper functions, avoid unescesary CLI/configs, avoid fallback values or behaviors, avoid try/with/except. Include this rule in your plan.

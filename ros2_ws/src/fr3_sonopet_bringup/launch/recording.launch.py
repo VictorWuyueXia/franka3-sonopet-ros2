@@ -49,5 +49,11 @@ def generate_launch_description():
                     }
                 ],
             ),
+            Node(
+                package="sonopet",
+                executable="sonopet_node",
+                name="sonopet_node",
+                output="screen",
+            ),
         ]
     )

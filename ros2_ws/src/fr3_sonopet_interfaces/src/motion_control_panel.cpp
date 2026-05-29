@@ -24,6 +24,7 @@
 #include "fr3_sonopet_interfaces/action/preview_motion.hpp"
 #include "fr3_sonopet_interfaces/action/stop_motion.hpp"
 #include "std_srvs/srv/set_bool.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 namespace fr3_sonopet_interfaces
 {
@@ -37,6 +38,7 @@ public:
     auto * layout = new QVBoxLayout(this);
     auto * motion_row = new QHBoxLayout();
     auto * operator_row = new QHBoxLayout();
+    set_pose_button_ = new QPushButton("Set Pose", this);
     preview_button_ = new QPushButton("Preview", this);
     execute_button_ = new QPushButton("Execute", this);
     stop_button_ = new QPushButton("Stop Motion", this);
@@ -54,6 +56,7 @@ public:
     dig_depth_mm_->setValidator(dig_depth_validator);
     dig_depth_mm_->setMaximumWidth(64);
     save_artifacts_->setChecked(true);
+    set_pose_button_->setEnabled(false);
     preview_button_->setEnabled(false);
     execute_button_->setEnabled(false);
     stop_button_->setEnabled(false);
@@ -61,6 +64,7 @@ public:
     resample_raster_button_->setEnabled(false);
     dig_depth_mm_->setEnabled(false);
     save_artifacts_->setEnabled(false);
+    motion_row->addWidget(set_pose_button_);
     motion_row->addWidget(preview_button_);
     motion_row->addWidget(new QLabel("Confirm:", this));
     motion_row->addWidget(confirmation_);
@@ -74,6 +78,16 @@ public:
     layout->addLayout(operator_row);
     layout->addLayout(motion_row);
     layout->addWidget(status_);
+    // Set Pose freezes the current physical robot pose as the repeatable motion reference.
+    connect(set_pose_button_, &QPushButton::clicked, this, [this]() {
+      auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+      status_->setText("Set pose requested.");
+      set_pose_client_->async_send_request(
+        request,
+        [this](rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future) {
+          status_->setText(QString::fromStdString(future.get()->message));
+        });
+    });
     connect(preview_button_, &QPushButton::clicked, this, [this]() {
       PreviewMotion::Goal goal;
       rclcpp_action::Client<PreviewMotion>::SendGoalOptions options;
@@ -192,8 +206,11 @@ public:
     build_raster_client_ = rclcpp_action::create_client<BuildRasterPlan>(
       rviz_node,
       "/fr3/build_raster_plan");
+    set_pose_client_ = rviz_node->create_client<std_srvs::srv::Trigger>(
+      "/fr3/set_beginning_pose");
     artifact_saving_client_ = rviz_node->create_client<std_srvs::srv::SetBool>(
       "/set_artifact_saving");
+    set_pose_button_->setEnabled(true);
     preview_button_->setEnabled(true);
     execute_button_->setEnabled(true);
     stop_button_->setEnabled(true);
@@ -225,6 +242,7 @@ private:
     }
   }
 
+  QPushButton * set_pose_button_;
   QPushButton * preview_button_;
   QPushButton * execute_button_;
   QPushButton * stop_button_;
@@ -239,6 +257,7 @@ private:
   rclcpp_action::Client<StopMotion>::SharedPtr stop_client_;
   rclcpp_action::Client<CapturePointCloud>::SharedPtr capture_client_;
   rclcpp_action::Client<BuildRasterPlan>::SharedPtr build_raster_client_;
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr set_pose_client_;
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr artifact_saving_client_;
 };
 

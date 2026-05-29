@@ -134,6 +134,9 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert 'package="fr3_sonopet_pointcloud"' in recording_launch
     assert 'executable="pointcloud_node"' in recording_launch
     assert "<exec_depend>fr3_sonopet_pointcloud</exec_depend>" in package_xml
+    assert 'package="sonopet"' in recording_launch
+    assert 'executable="sonopet_node"' in recording_launch
+    assert "<exec_depend>sonopet</exec_depend>" in package_xml
     assert "bringup_config_dir" in recording_launch
     assert "description_config_dir" in recording_launch
     assert "fr3_sonopet_description" in recording_launch
@@ -155,6 +158,11 @@ def test_motion_panel_plugin_is_exported_from_interfaces_package():
     assert "<exec_depend>rclcpp_action</exec_depend>" in package
     assert "setPreviewDisplayMode(true)" in panel
     assert "setPreviewDisplayMode(false)" in panel
+    assert 'new QPushButton("Set Pose", this)' in panel
+    assert "motion_row->addWidget(set_pose_button_)" in panel
+    assert "std_srvs::srv::Trigger" in panel
+    assert "/fr3/set_beginning_pose" in panel
+    assert "Set pose requested." in panel
     assert "Preview Franka Robot" in panel
     assert "Preview Sonopet Tool" in panel
     assert "Franka Robot" in panel

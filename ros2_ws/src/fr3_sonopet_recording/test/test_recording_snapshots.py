@@ -25,6 +25,9 @@ def test_recording_node_exposes_cutting_workflow_and_artifact_discard():
 
     assert "/set_artifact_saving" in node_source
     assert "/sonopet/cutting" in node_source
+    assert 'ARTIFACT_PATH_TOPIC = "/sonopet/artifact_path"' in node_source
+    assert "DurabilityPolicy.TRANSIENT_LOCAL" in node_source
+    assert "self._artifact_path_pub.publish(String(data=str(self._artifact_path)))" in node_source
     assert "class ActiveRecordingRun" in node_source
     assert "def _prepare_session_folder(self) -> None:" in node_source
     assert "recording_run_label" in node_source

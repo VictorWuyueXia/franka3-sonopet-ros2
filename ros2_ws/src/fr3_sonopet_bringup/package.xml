@@ -23,5 +23,6 @@
   <exec_depend>fr3_sonopet_supervisor</exec_depend>
   <exec_depend>fr3_sonopet_trajectory</exec_depend>
   <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>sonopet</exec_depend>
   <export><build_type>ament_python</build_type></export>
 </package>
