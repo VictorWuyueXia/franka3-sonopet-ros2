@@ -24,6 +24,14 @@ def local_timestamp_label(epoch_seconds: float) -> str:
     return datetime.fromtimestamp(epoch_seconds).astimezone().strftime("%Y%m%d%H%M")
 
 
+def sonopet_case_path(directory: Path, epoch_seconds: float) -> Path:
+    """Return the legacy Sonopet case filename used by the DAQ JSON stream."""
+    timestamp = datetime.fromtimestamp(epoch_seconds).astimezone()
+    nanosecond_suffix = time.time_ns() % 10_000_000_000
+    filename = f"{timestamp:%Y_%m_%d_T_%H_%M_%S}_{nanosecond_suffix:010d}.json"
+    return next_existing_name(directory / f"SonopetCase_{filename}")
+
+
 def next_existing_name(path: Path) -> Path:
     """Return the first path following the project duplicate-suffix convention."""
     if not path.exists():

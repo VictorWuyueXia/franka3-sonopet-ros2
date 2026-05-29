@@ -41,6 +41,10 @@ if [[ -d /usr/local/include/franka && -d /usr/include/franka ]]; then
 
   # GCC searches /usr/local/include before /usr/include by default. The local
   # shim ensures Franka ROS 2 compiles against the package-managed Jazzy headers.
+  case ":${CPATH:-}:" in
+    *:"${FR3_SONOPET_LOCAL_INCLUDE}":*) ;;
+    *) export CPATH="${FR3_SONOPET_LOCAL_INCLUDE}${CPATH:+:${CPATH}}" ;;
+  esac
   case " ${CXXFLAGS:-} " in
     *" -I${FR3_SONOPET_LOCAL_INCLUDE} "*) ;;
     *) export CXXFLAGS="-I${FR3_SONOPET_LOCAL_INCLUDE}${CXXFLAGS:+ ${CXXFLAGS}}" ;;

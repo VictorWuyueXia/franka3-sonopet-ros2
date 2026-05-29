@@ -55,6 +55,16 @@ def next_existing_name(path: Path) -> Path:
         index += 1
 
 
+def next_indexed_name(path: Path) -> Path:
+    """Return the first zero-indexed run artifact path for a repeated capture label."""
+    index = 0
+    while True:
+        candidate = path.with_name(f"{path.stem}_{index}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
 def pointcloud_xyz_rgb(cloud_msg: PointCloud2) -> tuple[np.ndarray, np.ndarray]:
     """Read finite XYZ and packed RGB values from a colored PointCloud2."""
     if not cloud_msg.header.frame_id:

@@ -81,17 +81,17 @@ Vendor tree includes `mobile_fr3_duo_trajectory_controller`, which currently fai
 
 ```bash
 source ./scripts/source_ubuntu24_ros_jazzy.sh
-ros2 pkg list | grep fr3_sonopet
+ros2 pkg list | grep -E '^(fr3_sonopet|sonopet$)'
 ```
 
-Expected: `fr3_sonopet_bringup`, `fr3_sonopet_description`, `fr3_sonopet_interfaces`, `fr3_sonopet_microphone`, `fr3_sonopet_motion`, `fr3_sonopet_recording`, `fr3_sonopet_supervisor`, `fr3_sonopet_tests`, `fr3_sonopet_trajectory`.
+Expected: `fr3_sonopet_bringup`, `fr3_sonopet_description`, `fr3_sonopet_interfaces`, `fr3_sonopet_microphone`, `fr3_sonopet_motion`, `fr3_sonopet_recording`, `fr3_sonopet_supervisor`, `fr3_sonopet_tests`, `fr3_sonopet_trajectory`, `sonopet`.
 
 After you change only the high-iteration experiment Python packages, **a faster rebuild**:
 
 ```bash
 source ./scripts/source_ubuntu24_ros_jazzy.sh
 cd ./ros2_ws
-colcon build --symlink-install --packages-select fr3_sonopet_bringup fr3_sonopet_trajectory fr3_sonopet_recording fr3_sonopet_microphone
+colcon build --symlink-install --packages-select fr3_sonopet_bringup fr3_sonopet_trajectory fr3_sonopet_recording fr3_sonopet_microphone sonopet
 cd ..
 ```
 
@@ -137,7 +137,7 @@ Quick check:
 
 ```bash
 echo $ROS_DISTRO          # should print: jazzy
-ros2 pkg list | grep fr3_sonopet
+ros2 pkg list | grep -E '^(fr3_sonopet|sonopet$)'
 ```
 
 If packages are missing, you forgot to source or the build failed.
@@ -332,10 +332,10 @@ For arm-only checks without sensors, use **Fake arm** (section 4) in terminal 1 
 ## 9. Common pitfalls
 
 1. **`ros2: command not found`** — source `scripts/source_ubuntu24_ros_jazzy.sh` (or `/opt/ros/jazzy/setup.bash`).
-2. **`Package 'fr3_sonopet_bringup' not found`** — build with `colcon build` and source again.
+2. **`Package 'fr3_sonopet_bringup'` or `Package 'sonopet' not found`** — build with `colcon build` and source again from the repo root.
 3. **`franka_hardware` compile error (`getTargetFeedback`, headers under `/usr/local/include/franka`)** — source `scripts/source_ubuntu24_ros_jazzy.sh` before building and add `-DCMAKE_IGNORE_PREFIX_PATH=/usr/local` to every `colcon build` (see section 2).
 4. **`mobile_fr3_duo_trajectory_controller` CMake/symlink install error** — add `--packages-skip mobile_fr3_duo_trajectory_controller` to every full-workspace `colcon build` (section 2). If `fr3_sonopet_bringup` still built, the Sonopet stack is usable.
-5. **Terminal closes right after `colcon build` finishes** — treat as success when `ros2 pkg list | grep fr3_sonopet` lists all nine project packages; re-source and continue.
+5. **Terminal closes right after `colcon build` finishes** — treat as success when `ros2 pkg list | grep -E '^(fr3_sonopet|sonopet$)'` lists all project packages; re-source and continue.
 6. **`not found: ".../local_setup.bash"` when sourcing** — leftover from an interrupted build. Either finish a successful build or run `rm -rf ros2_ws/build ros2_ws/install ros2_ws/log` and rebuild from section 2.
 7. **`realsense2_camera` fails on missing `librealsense2.so.2.56.4`** — clone `librealsense` into `ros2_ws/src/realsense-ros/`, skip the rosdep `librealsense2` key, and rebuild with the section 2 `CMAKE_IGNORE_PATH` command.
 8. **Mic node dies immediately** — no matching USB mic; adjust `microphone.yaml`.

@@ -10,6 +10,7 @@ from fr3_sonopet_pointcloud.cloud_processing import (
     camera_dir,
     make_colored_cloud,
     next_existing_name,
+    next_indexed_name,
     pointcloud_xyz_rgb,
     transform_points,
     trim_sensor_cloud,
@@ -62,7 +63,8 @@ def test_colored_cloud_and_pcd_preserve_rgb(tmp_path):
     assert np.allclose(colors, rgb)
     pcd = pcd_path.read_text(encoding="utf-8")
     assert "FIELDS x y z rgb" in pcd
-    assert "0.1 0.2 0.3 255" in pcd
+    first_point = np.fromstring(pcd.splitlines()[-2], sep=" ")
+    assert np.allclose(first_point, [0.1, 0.2, 0.3, 255.0])
 
 
 def test_pointcloud_reader_rejects_empty_frame():
@@ -86,6 +88,18 @@ def test_duplicate_pointcloud_names_follow_recording_convention(tmp_path):
     candidate = next_existing_name(base)
 
     assert candidate.name == "pointcloud_start_2.pcd"
+
+
+def test_indexed_pointcloud_names_start_at_zero(tmp_path):
+    base = camera_dir(tmp_path, "fixed") / "pointcloud_stop.pcd"
+    base.parent.mkdir(parents=True)
+
+    first = next_indexed_name(base)
+    first.write_text("", encoding="utf-8")
+    second = next_indexed_name(base)
+
+    assert first.name == "pointcloud_stop_0.pcd"
+    assert second.name == "pointcloud_stop_1.pcd"
 
 
 def test_pointcloud_metadata_records_config_and_timestamps(tmp_path):

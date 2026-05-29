@@ -22,18 +22,18 @@ recording:
     in_hand:
       rgb_topic: /RealSense_D405/in_hand/color/image_rect_raw
       pointcloud_topic: /RealSense_D405/in_hand/depth/color/points
-      parameter_service: /realsense/RealSense_D405/in_hand/set_parameters
+      parameter_service: /RealSense_D405/in_hand/set_parameters
     fixed:
       rgb_topic: /RealSense_D405/fixed/color/image_rect_raw
       pointcloud_topic: /RealSense_D405/fixed/depth/color/points
-      parameter_service: /realsense/RealSense_D405/fixed/set_parameters
+      parameter_service: /RealSense_D405/fixed/set_parameters
 """,
         encoding="utf-8",
     )
     camera_path.write_text(
         """
 realsense:
-  fps: 15.0
+  fps: 30.0
 pointcloud_snapshots:
   timeout_sec: 5.0
 """,
@@ -44,7 +44,7 @@ pointcloud_snapshots:
 
     assert config.artifact_root == artifact_root()
     assert config.artifact_root == tmp_path / "data_collection" / "experiments"
-    assert config.video_fps == 15.0
+    assert config.video_fps == 30.0
     assert config.cutting_topic == "/sonopet/cutting"
     assert not hasattr(config.cameras[0], "pointcloud_topic")
     assert not hasattr(config.cameras[0], "parameter_service")
