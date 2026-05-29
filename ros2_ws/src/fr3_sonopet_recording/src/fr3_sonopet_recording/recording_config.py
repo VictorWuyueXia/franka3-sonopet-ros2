@@ -10,6 +10,9 @@ from typing import Any
 import yaml
 
 
+EXPERIMENT_SETTING_LABEL = "sample_device_setting"
+
+
 def wall_clock_timestamp() -> float:
     """Return local wall-clock epoch seconds aligned with Sonopet JSONL timestamps."""
     return time.time()
@@ -21,13 +24,13 @@ def local_timestamp_label(epoch_seconds: float) -> str:
 
 
 def artifact_root() -> Path:
-    """Return the frozen experiment artifact directory under the ROS workspace."""
-    return Path(os.environ["FR3_SONOPET_REPO"]) / "ros2_ws" / "artifacts" / "experiments"
+    """Return the unified experiment directory under the repository root."""
+    return Path(os.environ["FR3_SONOPET_REPO"]) / "data_collection" / "experiments"
 
 
 def experiment_run_id() -> str:
-    """Return a local wall-clock session id aligned with operator-visible time."""
-    return datetime.now().astimezone().strftime("%Y%m%dT%H%M%S")
+    """Return the local RViz session id with the editable sample/device label."""
+    return f"{datetime.now().astimezone():%Y%m%dT%H%M%S}_{EXPERIMENT_SETTING_LABEL}"
 
 
 def recording_run_label(run_index: int) -> str:

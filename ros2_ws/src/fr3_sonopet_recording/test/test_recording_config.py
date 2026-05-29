@@ -43,6 +43,7 @@ pointcloud_snapshots:
     config = load_recording_config(recording_path, camera_path)
 
     assert config.artifact_root == artifact_root()
+    assert config.artifact_root == tmp_path / "data_collection" / "experiments"
     assert config.video_fps == 15.0
     assert config.cutting_topic == "/sonopet/cutting"
     assert not hasattr(config.cameras[0], "pointcloud_topic")
@@ -57,15 +58,17 @@ pointcloud_snapshots:
 
 def test_experiment_run_id_uses_local_wall_clock():
     run_id = experiment_run_id()
+    time_part, setting_part = run_id.split("_", 1)
 
-    assert len(run_id) == 15
-    assert run_id[8] == "T"
+    assert len(time_part) == 15
+    assert time_part[8] == "T"
     assert "Z" not in run_id
-    date_part, time_part = run_id.split("T")
+    assert setting_part == "sample_device_setting"
+    date_part, clock_part = time_part.split("T")
     assert len(date_part) == 8
-    assert len(time_part) == 6
+    assert len(clock_part) == 6
     assert date_part.isdigit()
-    assert time_part.isdigit()
+    assert clock_part.isdigit()
 
 
 def test_recording_run_label_names_cutting_intervals():

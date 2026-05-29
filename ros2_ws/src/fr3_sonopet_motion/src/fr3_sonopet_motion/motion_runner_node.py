@@ -667,12 +667,17 @@ class MotionRunnerNode(Node):
         self._controller_done.clear()
         controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
         if not controller_handle.accepted:
+            with self._state_lock:
+                unavailable = not self._joint_states_available
+            if unavailable:
+                self._controller_done.set()
+                return FollowJointTrajectory.Result.INVALID_GOAL
+            self._activate_franka_controllers()
+            controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
+        if not controller_handle.accepted:
             self._controller_done.set()
             with self._state_lock:
                 self._active_controller_handle = None
-                unavailable = not self._joint_states_available
-            if unavailable:
-                return FollowJointTrajectory.Result.INVALID_GOAL
             raise RuntimeError(MOTION_VENDOR_ERROR)
         with self._state_lock:
             self._active_controller_handle = controller_handle
