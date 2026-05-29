@@ -32,7 +32,8 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     assert not any(line.lstrip().startswith("#") for line in raster.splitlines())
     assert not any(line.lstrip().startswith("#") for line in motion.splitlines())
     assert not any(line.lstrip().startswith("#") for line in pointcloud.splitlines())
-    assert "rgb_camera_profile: 848x480x30" in cameras
+    assert "rgb_camera_profile: 848x480x15" in cameras
+    assert "fps: 15.0" in cameras
     assert "translation_xyz:" in cameras
     assert "quaternion_xyzw:" in cameras
     assert "parent_frame: fr3_link8" in cameras
@@ -77,6 +78,8 @@ def test_launch_files_use_sensor_only_recording_defaults():
     rviz = (package_root / "rviz" / "experiment.rviz").read_text(encoding="utf-8")
 
     assert "cameras.yaml" in cameras_launch
+    assert "rgb_camera_profile = f\"{rgb_width}x{rgb_height}x{fps}\"" in cameras_launch
+    assert "depth_module_profile = f\"{depth_width}x{depth_height}x{fps}\"" in cameras_launch
     assert "camera['namespace']" in cameras_launch or 'camera["namespace"]' in cameras_launch
     assert "camera['camera_name']" in cameras_launch or 'camera["camera_name"]' in cameras_launch
     assert 'DeclareLaunchArgument("pointcloud_enable", default_value="false")' in cameras_launch
@@ -86,6 +89,8 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "translation_xyz" in cameras_launch
     assert "quaternion_xyzw" in cameras_launch
     assert '"publish_tf": "false"' in cameras_launch
+    assert '"rgb_camera.color_profile": rgb_camera_profile' in cameras_launch
+    assert '"depth_module.depth_profile": depth_module_profile' in cameras_launch
     assert '"pointcloud.stream_filter"' in cameras_launch
     assert '"enable_color": "true"' in cameras_launch
     assert "raster.yaml" in experiment_launch

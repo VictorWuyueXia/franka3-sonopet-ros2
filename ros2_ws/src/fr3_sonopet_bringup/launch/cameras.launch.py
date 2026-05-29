@@ -16,6 +16,11 @@ def generate_launch_description():
         .read_text(encoding="utf-8")
     )
     realsense = config["realsense"]
+    fps = f"{float(realsense['fps']):g}"
+    rgb_width, rgb_height, _ = realsense["rgb_camera_profile"].split("x", maxsplit=2)
+    depth_width, depth_height, _ = realsense["depth_module_profile"].split("x", maxsplit=2)
+    rgb_camera_profile = f"{rgb_width}x{rgb_height}x{fps}"
+    depth_module_profile = f"{depth_width}x{depth_height}x{fps}"
     rs_launch_path = PathJoinSubstitution(
         [FindPackageShare("realsense2_camera"), "launch", "rs_launch.py"]
     )
@@ -45,7 +50,7 @@ def generate_launch_description():
                     ],
                 )
             )
-        # publish_tf:=false stops the driver from publishing a competing optical-frame chain.
+        # Driver stream profiles use the experiment FPS value as the single timing authority.
         actions.append(
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(rs_launch_path),
@@ -58,8 +63,8 @@ def generate_launch_description():
                     "enable_color": "true",
                     "enable_depth": "true",
                     "enable_sync": "true",
-                    "rgb_camera.color_profile": realsense["rgb_camera_profile"],
-                    "depth_module.depth_profile": realsense["depth_module_profile"],
+                    "rgb_camera.color_profile": rgb_camera_profile,
+                    "depth_module.depth_profile": depth_module_profile,
                     "align_depth.enable": "true",
                     "pointcloud.enable": pointcloud_enable,
                     "pointcloud.stream_filter": "2",

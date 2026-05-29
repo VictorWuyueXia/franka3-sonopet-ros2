@@ -137,6 +137,7 @@ def test_raster_timing_is_slower_than_approach_for_equal_distance():
     )
     assert _duration_seconds(approach[0].time_from_start) == SEGMENT_SETTLING_TIME_S
     assert _duration_seconds(raster[0].time_from_start) == SEGMENT_SETTLING_TIME_S
+    assert SEGMENT_SETTLING_TIME_S >= 1.5
     assert raster_dt > approach_dt
 
 

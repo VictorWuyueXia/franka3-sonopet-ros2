@@ -137,6 +137,9 @@ change globally to re-domain the topics:
 /RealSense_D405/fixed/set_parameters	-->  /realsense/RealSense_D405/fixed/set_parameters	
 /compute_ik	-->  /fr3/compute_ik	
 
+- load same intrinsics
+- run alias
+- IK then FK to check accuracy by supervisor
 
 
 + let motion node remember its beginning pose
@@ -172,9 +175,8 @@ change globally to re-domain the topics:
 + remember first position and always return to it
 
 
-- load same intrinsics
-- run alias
-- IK then FK to check accuracy by supervisor
+- sonopet node not quitting properly
+- supervisor record joint spave traj
 - what happens if I publish another point while motion
 
 

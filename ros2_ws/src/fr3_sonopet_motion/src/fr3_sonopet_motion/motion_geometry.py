@@ -19,7 +19,7 @@ FK_SERVICE = "/compute_fk"
 CONTROLLER_ACTION = "/fr3_arm_controller/follow_joint_trajectory"
 MAX_CARTESIAN_STEP_M = 0.01
 POINT_TIME_FLOOR_S = 0.05
-SEGMENT_SETTLING_TIME_S = 0.5
+SEGMENT_SETTLING_TIME_S = 1.5
 IK_TIMEOUT_S = 1.0
 JOINT_NAMES = (
     "fr3_joint1",
