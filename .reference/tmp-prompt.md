@@ -169,7 +169,9 @@ change globally to re-domain the topics:
 
 + sonopet built in
 
-- remember first position and always return to it
++ remember first position and always return to it
+
+
 - load same intrinsics
 - run alias
 - IK then FK to check accuracy by supervisor
