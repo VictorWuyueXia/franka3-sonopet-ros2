@@ -26,7 +26,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
-from tf2_ros import Buffer, TransformListener
+from tf2_ros import Buffer, TransformException, TransformListener
 from trajectory_msgs.msg import JointTrajectory
 
 from fr3_sonopet_motion.motion_geometry import (
@@ -97,6 +97,7 @@ class MotionRunnerNode(Node):
         self._joint_state_received_s: float | None = None
         self._joint_states_available = False
         self._joint_states_lost = False
+        self._waiting_for_tool_tf = False
         self._recovery_active = False
         self._beginning_pose: BeginningPose | None = None
         self._active_execute = False
@@ -212,16 +213,32 @@ class MotionRunnerNode(Node):
         # Idle preview TF mirrors the live arm until playback takes ownership of the preview stream.
         with self._state_lock:
             recovered = self._joint_states_lost
+            beginning_pose_missing = self._beginning_pose is None
+        if beginning_pose_missing:
+            try:
+                self._cache_beginning_pose(joint_state)
+            except TransformException as exc:
+                with self._state_lock:
+                    self._joint_states_available = False
+                    self._joint_states_lost = True
+                    first_wait = not self._waiting_for_tool_tf
+                    self._waiting_for_tool_tf = True
+                    self._joint_state_condition.notify_all()
+                if first_wait:
+                    self.get_logger().warn(
+                        f"Waiting for Sonopet TCP TF before enabling motion: {exc}"
+                    )
+                self._vendor_stale_pub.publish(Bool(data=True))
+                return
+        with self._state_lock:
             self._latest_joint_state = joint_state
             self._joint_state_count += 1
             self._joint_state_received_s = monotonic()
             self._joint_states_available = True
             self._joint_states_lost = False
-            beginning_pose_missing = self._beginning_pose is None
+            self._waiting_for_tool_tf = False
             preview_active = self._active_preview
             self._joint_state_condition.notify_all()
-        if beginning_pose_missing:
-            self._cache_beginning_pose(joint_state)
         if recovered:
             self.get_logger().info("Vendor joint states recovered.")
         self._vendor_stale_pub.publish(Bool(data=False))
@@ -667,12 +684,17 @@ class MotionRunnerNode(Node):
         self._controller_done.clear()
         controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
         if not controller_handle.accepted:
+            with self._state_lock:
+                unavailable = not self._joint_states_available
+            if unavailable:
+                self._controller_done.set()
+                return FollowJointTrajectory.Result.INVALID_GOAL
+            self._activate_franka_controllers()
+            controller_handle = wait_future(self._controller_client.send_goal_async(controller_goal))
+        if not controller_handle.accepted:
             self._controller_done.set()
             with self._state_lock:
                 self._active_controller_handle = None
-                unavailable = not self._joint_states_available
-            if unavailable:
-                return FollowJointTrajectory.Result.INVALID_GOAL
             raise RuntimeError(MOTION_VENDOR_ERROR)
         with self._state_lock:
             self._active_controller_handle = controller_handle

@@ -21,9 +21,9 @@ cameras:
     planning_source: false
 
 realsense:
-  rgb_camera_profile: 848x480x15
-  depth_module_profile: 848x480x15
-  fps: 15.0
+  rgb_camera_profile: 848x480x30
+  depth_module_profile: 848x480x30
+  fps: 30.0
 
 pointcloud_snapshots:
   timeout_sec: 5.0

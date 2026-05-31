@@ -243,6 +243,28 @@ def test_vendor_joint_state_health_monitor_is_encoded():
     assert "self._start_vendor_recovery()" in runner
 
 
+def test_startup_tcp_tf_gap_keeps_vendor_joint_state_stale():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "from tf2_ros import Buffer, TransformException, TransformListener" in runner
+    assert "except TransformException as exc:" in runner
+    assert "Waiting for Sonopet TCP TF before enabling motion" in runner
+    assert "self._vendor_stale_pub.publish(Bool(data=True))" in runner
+    assert "self._vendor_stale_pub.publish(Bool(data=False))" in runner
+    stale_branch = runner.split("except TransformException as exc:", 1)[1].split(
+        "with self._state_lock:\n            self._latest_joint_state = joint_state", 1
+    )[0]
+    assert "return" in stale_branch
+    live_branch = runner.split("if beginning_pose_missing:", 1)[1].split(
+        "if recovered:", 1
+    )[0]
+    assert "self._cache_beginning_pose(joint_state)" in live_branch
+    assert "self._joint_states_available = True" in live_branch
+
+
 def test_vendor_joint_state_silence_invalidates_only_live_state():
     package_root = Path(__file__).resolve().parents[1]
     runner = (

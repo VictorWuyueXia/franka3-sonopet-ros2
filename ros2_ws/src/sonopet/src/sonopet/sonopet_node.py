@@ -20,8 +20,8 @@ from sonopet.artifacts import (
     FOOTPEDAL_PORT,
     SAMPLE_RATE_HZ,
     local_timestamp_label,
-    next_existing_name,
     relative_artifact_path,
+    sonopet_case_path,
     wall_clock_timestamp,
     write_sonopet_metadata,
 )
@@ -105,10 +105,10 @@ class SonopetNode(Node):
     def _start_interval(self) -> None:
         if self._artifact_root is None:
             raise RuntimeError(f"Sonopet artifact root has not arrived on {ARTIFACT_PATH_TOPIC}")
-        self._sample_path = next_existing_name(self._artifact_root / "sonopet" / "sonopet.jsonl")
-        self._sample_file = self._sample_path.open("w", encoding="utf-8", buffering=1)
         self._sample_count = 0
         self._started_at = wall_clock_timestamp()
+        self._sample_path = sonopet_case_path(self._artifact_root / "sonopet", self._started_at)
+        self._sample_file = self._sample_path.open("w", encoding="utf-8", buffering=1)
         self._footpedal.write(b"1")
         self._sampling_active.set()
         self._sampling_thread = threading.Thread(target=self._sample_sonopet, daemon=False)
@@ -122,7 +122,8 @@ class SonopetNode(Node):
             next_sample += interval_s
             self._socket.sendall(b"grab")
             payload = json.loads(self._socket.recv(SOCKET_BYTES).decode())
-            self._sample_file.write(json.dumps(payload, sort_keys=True) + "\n")
+            sample = {"timestamp": wall_clock_timestamp(), "data": payload}
+            self._sample_file.write(json.dumps(sample) + "\n")
             self._sample_count += 1
             sleep_s = next_sample - time.perf_counter()
             if sleep_s > 0.0:

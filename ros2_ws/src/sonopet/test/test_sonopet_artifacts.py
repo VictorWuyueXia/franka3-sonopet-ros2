@@ -7,25 +7,37 @@ from sonopet.artifacts import (
     SAMPLE_RATE_HZ,
     SONOPET_SETTINGS,
     next_existing_name,
+    sonopet_case_path,
     write_sonopet_metadata,
 )
 
 
 def test_duplicate_sonopet_names_follow_recording_convention(tmp_path):
-    base = tmp_path / "sonopet" / "sonopet.jsonl"
+    base = tmp_path / "sonopet" / "SonopetCase_2026_05_29_T_18_13_00_1234567890.json"
     base.parent.mkdir()
     base.write_text("", encoding="utf-8")
-    base.with_name("sonopet_1.jsonl").write_text("", encoding="utf-8")
+    base.with_name("SonopetCase_2026_05_29_T_18_13_00_1234567890_1.json").write_text(
+        "",
+        encoding="utf-8",
+    )
 
     candidate = next_existing_name(base)
 
-    assert candidate.name == "sonopet_2.jsonl"
+    assert candidate.name == "SonopetCase_2026_05_29_T_18_13_00_1234567890_2.json"
+
+
+def test_sonopet_case_path_uses_legacy_json_name(tmp_path):
+    case_path = sonopet_case_path(tmp_path / "sonopet", 1_779_998_313.1641626)
+
+    assert case_path.parent == tmp_path / "sonopet"
+    assert case_path.name.startswith("SonopetCase_2026_05_28_T_")
+    assert case_path.suffix == ".json"
 
 
 def test_sonopet_metadata_keeps_interval_timestamps_and_settings(tmp_path):
     intervals = [
         {
-            "path": "sonopet/sonopet.jsonl",
+            "path": "sonopet/SonopetCase_2026_05_29_T_18_13_00_1234567890.json",
             "started_at": 1_700_000_000.0,
             "started_at_local": "202605271551",
             "stopped_at": 1_700_000_005.0,
@@ -57,5 +69,7 @@ def test_sonopet_node_source_owns_cutting_artifact_and_footpedal_paths():
     assert 'self._footpedal.write(b"0")' in node
     assert 'self._socket.sendall(b"grab")' in node
     assert 'self._socket.sendall(b"stop")' in node
+    assert 'sample = {"timestamp": wall_clock_timestamp(), "data": payload}' in node
     assert '"bin/sonopet_live_data"' in setup
+    assert (package_root / "setup.cfg").read_text(encoding="utf-8").count("lib/sonopet") == 2
     assert (package_root / "bin" / "sonopet_live_data").exists()

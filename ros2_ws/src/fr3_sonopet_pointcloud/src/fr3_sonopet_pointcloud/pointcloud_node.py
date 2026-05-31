@@ -30,6 +30,7 @@ from fr3_sonopet_pointcloud.cloud_processing import (
     make_colored_cloud,
     matrix_from_transform,
     next_existing_name,
+    next_indexed_name,
     pointcloud_xyz_rgb,
     transform_points,
     trim_sensor_cloud,
@@ -177,7 +178,12 @@ class PointcloudNode(Node):
             artifact_path = ""
 
             if goal_handle.request.save_artifacts:
-                pcd_path = next_existing_name(camera_dir(root, camera.key) / f"{label}.pcd")
+                pcd_base = camera_dir(root, camera.key) / f"{label}.pcd"
+                pcd_path = (
+                    next_indexed_name(pcd_base)
+                    if label in {"pointcloud_start", "pointcloud_stop"}
+                    else next_existing_name(pcd_base)
+                )
                 point_count = write_colored_pcd(pcd_path, base_xyz, trimmed_rgb)
                 artifact_path = str(pcd_path)
                 self._append_metadata(
