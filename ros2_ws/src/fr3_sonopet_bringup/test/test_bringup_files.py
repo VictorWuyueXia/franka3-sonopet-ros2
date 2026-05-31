@@ -72,9 +72,13 @@ def test_launch_files_use_sensor_only_recording_defaults():
     )
     recording_launch = (package_root / "launch" / "recording.launch.py").read_text(encoding="utf-8")
     package_xml = (package_root / "package.xml").read_text(encoding="utf-8")
+    setup_py = (package_root / "setup.py").read_text(encoding="utf-8")
     microphone_launch = (package_root / "launch" / "microphone.launch.py").read_text(
         encoding="utf-8"
     )
+    shutdown_manager = (
+        package_root / "src" / "fr3_sonopet_bringup" / "shutdown_manager.py"
+    ).read_text(encoding="utf-8")
     rviz = (package_root / "rviz" / "experiment.rviz").read_text(encoding="utf-8")
 
     assert "cameras.yaml" in cameras_launch
@@ -115,6 +119,9 @@ def test_launch_files_use_sensor_only_recording_defaults():
     pointcloud_arg = 'launch_arguments={"pointcloud_enable": LaunchConfiguration("rviz")}'
     assert pointcloud_arg in experiment_launch
     assert "parameters=[raster_config]" in experiment_launch
+    assert 'executable="shutdown_manager_node"' in experiment_launch
+    assert "shutdown_manager_node = fr3_sonopet_bringup.shutdown_manager:main" in setup_py
+    assert "<exec_depend>fr3_sonopet_interfaces</exec_depend>" in package_xml
     assert "/sonopet/planning_cloud" in rviz
     assert "Transient Local" in rviz
     assert "/sonopet/raster_plan/poses" in rviz
@@ -131,7 +138,7 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "Enabled: false" in rviz
     assert "TF Prefix: preview" in rviz
     assert "All Enabled: false" in rviz
-    assert "Show Names: false" in rviz
+    assert "Show Names: true" in rviz
     assert "Color Transformer: RGB8" in rviz
     assert "recording_topics.yaml" in recording_launch
     assert "cameras.yaml" in recording_launch
@@ -147,6 +154,11 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "fr3_sonopet_description" in recording_launch
     assert "/sonopet/pointcloud/status_marker" not in rviz
     assert "microphone.yaml" in microphone_launch
+    assert "SHUTDOWN_SERVICE = \"/sonopet/shutdown\"" in shutdown_manager
+    assert "STOP_MOTION_ACTION = \"/fr3/stop_motion\"" in shutdown_manager
+    assert "StopMotion" in shutdown_manager
+    assert "os.getppid()" in shutdown_manager
+    assert "signal.SIGINT" in shutdown_manager
 
 
 def test_motion_panel_plugin_is_exported_from_interfaces_package():
@@ -178,3 +190,8 @@ def test_motion_panel_plugin_is_exported_from_interfaces_package():
     assert "/fr3/build_raster_plan" in panel
     assert "goal.update_selected_center = false" in panel
     assert "QDoubleValidator(-1000.0, 1000.0, 3, dig_depth_mm_)" in panel
+    assert 'new QPushButton("Shutdown", this)' in panel
+    assert "shutdown_row->addStretch()" in panel
+    assert "E to execute, S to shutdown" in panel
+    assert "Type S to shutdown." in panel
+    assert "/sonopet/shutdown" in panel

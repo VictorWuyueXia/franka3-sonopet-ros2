@@ -38,10 +38,13 @@ public:
     auto * layout = new QVBoxLayout(this);
     auto * motion_row = new QHBoxLayout();
     auto * operator_row = new QHBoxLayout();
+    auto * confirmation_row = new QHBoxLayout();
+    auto * shutdown_row = new QHBoxLayout();
     set_pose_button_ = new QPushButton("Set Pose", this);
     preview_button_ = new QPushButton("Preview", this);
     execute_button_ = new QPushButton("Execute", this);
     stop_button_ = new QPushButton("Stop Motion", this);
+    shutdown_button_ = new QPushButton("Shutdown", this);
     rescan_button_ = new QPushButton("Rescan Cloud", this);
     resample_raster_button_ = new QPushButton("Re-sample Raster", this);
     dig_depth_mm_ = new QLineEdit(this);
@@ -51,7 +54,7 @@ public:
     auto * dig_depth_validator = new QDoubleValidator(-1000.0, 1000.0, 3, dig_depth_mm_);
     dig_depth_validator->setNotation(QDoubleValidator::StandardNotation);
     confirmation_->setMaxLength(1);
-    confirmation_->setPlaceholderText("E");
+    confirmation_->setPlaceholderText("E/S");
     dig_depth_mm_->setText("0");
     dig_depth_mm_->setValidator(dig_depth_validator);
     dig_depth_mm_->setMaximumWidth(64);
@@ -60,14 +63,15 @@ public:
     preview_button_->setEnabled(false);
     execute_button_->setEnabled(false);
     stop_button_->setEnabled(false);
+    shutdown_button_->setEnabled(false);
     rescan_button_->setEnabled(false);
     resample_raster_button_->setEnabled(false);
     dig_depth_mm_->setEnabled(false);
     save_artifacts_->setEnabled(false);
+    confirmation_row->addWidget(new QLabel("E to execute, S to shutdown", this));
+    confirmation_row->addWidget(confirmation_);
     motion_row->addWidget(set_pose_button_);
     motion_row->addWidget(preview_button_);
-    motion_row->addWidget(new QLabel("Confirm:", this));
-    motion_row->addWidget(confirmation_);
     motion_row->addWidget(execute_button_);
     motion_row->addWidget(stop_button_);
     operator_row->addWidget(rescan_button_);
@@ -75,9 +79,13 @@ public:
     operator_row->addWidget(dig_depth_mm_);
     operator_row->addWidget(new QLabel("mm dig", this));
     operator_row->addWidget(save_artifacts_);
+    shutdown_row->addStretch();
+    shutdown_row->addWidget(shutdown_button_);
+    layout->addLayout(confirmation_row);
     layout->addLayout(operator_row);
     layout->addLayout(motion_row);
     layout->addWidget(status_);
+    layout->addLayout(shutdown_row);
     // Set Pose freezes the current physical robot pose as the repeatable motion reference.
     connect(set_pose_button_, &QPushButton::clicked, this, [this]() {
       auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
@@ -140,6 +148,20 @@ public:
         setPreviewDisplayMode(false);
       };
       stop_client_->async_send_goal(goal, options);
+    });
+    connect(shutdown_button_, &QPushButton::clicked, this, [this]() {
+      if (confirmation_->text() != "S") {
+        status_->setText("Type S to shutdown.");
+        return;
+      }
+      auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+      status_->setText("Shutdown requested.");
+      shutdown_button_->setEnabled(false);
+      shutdown_client_->async_send_request(
+        request,
+        [this](rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future) {
+          status_->setText(QString::fromStdString(future.get()->message));
+        });
     });
     connect(rescan_button_, &QPushButton::clicked, this, [this]() {
       CapturePointCloud::Goal goal;
@@ -210,10 +232,13 @@ public:
       "/fr3/set_beginning_pose");
     artifact_saving_client_ = rviz_node->create_client<std_srvs::srv::SetBool>(
       "/set_artifact_saving");
+    shutdown_client_ = rviz_node->create_client<std_srvs::srv::Trigger>(
+      "/sonopet/shutdown");
     set_pose_button_->setEnabled(true);
     preview_button_->setEnabled(true);
     execute_button_->setEnabled(true);
     stop_button_->setEnabled(true);
+    shutdown_button_->setEnabled(true);
     rescan_button_->setEnabled(true);
     resample_raster_button_->setEnabled(true);
     dig_depth_mm_->setEnabled(true);
@@ -246,6 +271,7 @@ private:
   QPushButton * preview_button_;
   QPushButton * execute_button_;
   QPushButton * stop_button_;
+  QPushButton * shutdown_button_;
   QPushButton * rescan_button_;
   QPushButton * resample_raster_button_;
   QLineEdit * dig_depth_mm_;
@@ -258,6 +284,7 @@ private:
   rclcpp_action::Client<CapturePointCloud>::SharedPtr capture_client_;
   rclcpp_action::Client<BuildRasterPlan>::SharedPtr build_raster_client_;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr set_pose_client_;
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr shutdown_client_;
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr artifact_saving_client_;
 };
 

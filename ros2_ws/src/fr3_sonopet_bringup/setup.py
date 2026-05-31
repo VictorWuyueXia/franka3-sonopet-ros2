@@ -28,6 +28,7 @@ setup(
         "console_scripts": [
             "d405_intrinsics_capture = fr3_sonopet_bringup.camera_intrinsics:capture_main",
             "d405_intrinsics_publisher = fr3_sonopet_bringup.camera_intrinsics:publisher_main",
+            "shutdown_manager_node = fr3_sonopet_bringup.shutdown_manager:main",
         ],
     },
 )

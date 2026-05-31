@@ -165,8 +165,10 @@ def main() -> None:
     node = SonopetNode()
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
-    executor.spin()
-    executor.remove_node(node)
-    node.destroy_node()
-    if rclpy.ok():
-        rclpy.shutdown()
+    try:
+        executor.spin()
+    finally:
+        executor.remove_node(node)
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()

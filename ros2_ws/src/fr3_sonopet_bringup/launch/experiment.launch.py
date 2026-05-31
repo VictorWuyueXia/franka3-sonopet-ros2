@@ -80,6 +80,12 @@ def generate_launch_description():
                 output="screen",
             ),
             Node(
+                package="fr3_sonopet_bringup",
+                executable="shutdown_manager_node",
+                name="shutdown_manager_node",
+                output="screen",
+            ),
+            Node(
                 package="rviz2",
                 executable="rviz2",
                 name="rviz2",

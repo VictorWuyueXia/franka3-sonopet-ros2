@@ -175,7 +175,12 @@ change globally to re-domain the topics:
 + remember first position and always return to it
 
 
-- sonopet node not quitting properly
++ sonopet node not quitting properly
+
+
++ graceful shutdown
+
+
 - supervisor record joint spave traj
 - what happens if I publish another point while motion
 
