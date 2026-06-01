@@ -24,6 +24,7 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     recording = (package_root / "config" / "recording_topics.yaml").read_text(encoding="utf-8")
     raster = (package_root / "config" / "raster.yaml").read_text(encoding="utf-8")
     motion = (package_root / "config" / "motion.yaml").read_text(encoding="utf-8")
+    supervisor = (package_root / "config" / "supervisor.yaml").read_text(encoding="utf-8")
     microphone = (package_root / "config" / "microphone.yaml").read_text(encoding="utf-8")
     pointcloud = (package_root / "config" / "pointcloud.yaml").read_text(encoding="utf-8")
 
@@ -31,6 +32,7 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     assert not any(line.lstrip().startswith("#") for line in recording.splitlines())
     assert not any(line.lstrip().startswith("#") for line in raster.splitlines())
     assert not any(line.lstrip().startswith("#") for line in motion.splitlines())
+    assert not any(line.lstrip().startswith("#") for line in supervisor.splitlines())
     assert not any(line.lstrip().startswith("#") for line in pointcloud.splitlines())
     assert "rgb_camera_profile: 848x480x15" in cameras
     assert "fps: 15.0" in cameras
@@ -52,6 +54,7 @@ def test_sensor_configs_encode_snapshot_and_microphone_policy():
     assert "motion_speed_m_s: 0.03" in motion
     assert "raster_speed_m_s:" in motion
     assert "parking_lift_m: 0.05" in motion
+    assert "joint_state_downsample: 10" in supervisor
     assert "/microphone/audio" in recording
     assert "ros__parameters:" in microphone
     assert "iMM-6C" in microphone
@@ -68,6 +71,9 @@ def test_launch_files_use_sensor_only_recording_defaults():
         src_root / "fr3_sonopet_description" / "launch" / "sonopet_tcp.launch.py"
     ).read_text(encoding="utf-8")
     experiment_launch = (package_root / "launch" / "experiment.launch.py").read_text(
+        encoding="utf-8"
+    )
+    fake_experiment_launch = (package_root / "launch" / "fake_experiment.launch.py").read_text(
         encoding="utf-8"
     )
     recording_launch = (package_root / "launch" / "recording.launch.py").read_text(encoding="utf-8")
@@ -99,7 +105,11 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert '"enable_color": "true"' in cameras_launch
     assert "raster.yaml" in experiment_launch
     assert "motion.yaml" in experiment_launch
+    assert "supervisor.yaml" in experiment_launch
+    assert "supervisor.yaml" in fake_experiment_launch
     assert "parameters=[motion_config]" in experiment_launch
+    assert "parameters=[supervisor_config]" in experiment_launch
+    assert 'parameters=[supervisor_config, {"fake_run": True}]' in fake_experiment_launch
     assert '" hand:=false"' in franka_launch
     assert '" ee_id:=none"' in franka_launch
     assert "franka_gripper" not in franka_launch

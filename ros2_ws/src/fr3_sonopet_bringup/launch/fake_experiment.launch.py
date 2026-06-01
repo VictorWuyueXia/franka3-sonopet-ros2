@@ -27,6 +27,9 @@ def generate_launch_description():
     motion_config = yaml.safe_load(
         (bringup_share / "config" / "motion.yaml").read_text(encoding="utf-8")
     )["motion"]
+    supervisor_config = yaml.safe_load(
+        (bringup_share / "config" / "supervisor.yaml").read_text(encoding="utf-8")
+    )["supervisor"]
     # Fake hardware uses the same upstream Franka launch with non-hardware arguments.
     fake_franka = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -60,7 +63,7 @@ def generate_launch_description():
                 executable="experiment_supervisor_node",
                 name="experiment_supervisor_node",
                 output="screen",
-                parameters=[{"fake_run": True}],
+                parameters=[supervisor_config, {"fake_run": True}],
             ),
         ]
     )

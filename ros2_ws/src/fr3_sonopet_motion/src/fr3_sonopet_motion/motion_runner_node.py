@@ -64,6 +64,7 @@ HARDWARE_STATE_SERVICE = "/controller_manager/set_hardware_component_state"
 SWITCH_CONTROLLER_SERVICE = "/controller_manager/switch_controller"
 FRANKA_HARDWARE_COMPONENT = "FrankaHardwareInterface"
 CUTTING_TOPIC = "/sonopet/cutting"
+MOTION_STATE_TOPIC = "/fr3/motion"
 VENDOR_JOINT_STATE_STALE_TOPIC = "/sonopet/vendor_joint_state_stale"
 SET_BEGINNING_POSE_SERVICE = "/fr3/set_beginning_pose"
 FRANKA_RECOVERY_CONTROLLERS = (
@@ -118,6 +119,8 @@ class MotionRunnerNode(Node):
             10,
         )
         self._cutting_pub = self.create_publisher(Bool, CUTTING_TOPIC, 10)
+        self._motion_state_pub = self.create_publisher(Bool, MOTION_STATE_TOPIC, 10)
+        self._motion_state_pub.publish(Bool(data=False))
         self._vendor_stale_pub = self.create_publisher(
             Bool,
             VENDOR_JOINT_STATE_STALE_TOPIC,
@@ -615,6 +618,7 @@ class MotionRunnerNode(Node):
 
         if execute:
             cutting_active = False
+            self._motion_state_pub.publish(Bool(data=True))
             try:
                 for segment_name, trajectory in trajectories:
                     if self._stop_requested.is_set():
@@ -658,6 +662,8 @@ class MotionRunnerNode(Node):
             finally:
                 if cutting_active:
                     self._publish_cutting(False)
+                if not self._stop_requested.is_set():
+                    self._motion_state_pub.publish(Bool(data=False))
 
         goal_handle.succeed()
         result.success = True
@@ -771,26 +777,29 @@ class MotionRunnerNode(Node):
 
         feedback.phase = "retract"
         goal_handle.publish_feedback(feedback)
-        self._wait_for_vendor_joint_state(goal_handle, "stop")
-        for trajectory in self._compute_recovery_trajectory():
-            controller_goal = FollowJointTrajectory.Goal()
-            controller_goal.trajectory = trajectory
-            controller_handle = wait_future(
-                self._controller_client.send_goal_async(controller_goal)
-            )
-            if not controller_handle.accepted:
-                raise RuntimeError(MOTION_VENDOR_ERROR)
-            controller_result = wait_future(controller_handle.get_result_async()).result
-            if controller_result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
-                raise RuntimeError(MOTION_VENDOR_ERROR)
+        try:
+            self._wait_for_vendor_joint_state(goal_handle, "stop")
+            for trajectory in self._compute_recovery_trajectory():
+                controller_goal = FollowJointTrajectory.Goal()
+                controller_goal.trajectory = trajectory
+                controller_handle = wait_future(
+                    self._controller_client.send_goal_async(controller_goal)
+                )
+                if not controller_handle.accepted:
+                    raise RuntimeError(MOTION_VENDOR_ERROR)
+                controller_result = wait_future(controller_handle.get_result_async()).result
+                if controller_result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
+                    raise RuntimeError(MOTION_VENDOR_ERROR)
 
-        with self._state_lock:
-            self._active_execute = False
-            self._stop_requested.clear()
-        goal_handle.succeed()
-        result.success = True
-        result.message = "Motion stopped, retracted, and returned to the beginning pose."
-        return result
+            with self._state_lock:
+                self._active_execute = False
+                self._stop_requested.clear()
+            goal_handle.succeed()
+            result.success = True
+            result.message = "Motion stopped, retracted, and returned to the beginning pose."
+            return result
+        finally:
+            self._motion_state_pub.publish(Bool(data=False))
 
     def _compute_recovery_trajectory(self) -> list[JointTrajectory]:
         if (

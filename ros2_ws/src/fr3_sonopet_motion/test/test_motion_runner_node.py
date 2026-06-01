@@ -218,6 +218,24 @@ def test_preview_playback_joint_state_path_is_encoded():
     assert "self._active_preview = True" in runner
     assert "if self._stop_requested.is_set():" in runner
     assert "preview_active = self._active_preview" in runner
+
+
+def test_motion_state_topic_marks_physical_execution_interval():
+    package_root = Path(__file__).resolve().parents[1]
+    runner = (
+        package_root / "src" / "fr3_sonopet_motion" / "motion_runner_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'MOTION_STATE_TOPIC = "/fr3/motion"' in runner
+    assert "self._motion_state_pub = self.create_publisher(Bool, MOTION_STATE_TOPIC, 10)" in runner
+    assert "self._motion_state_pub.publish(Bool(data=False))" in runner
+    assert "self._motion_state_pub.publish(Bool(data=True))" in runner
+    assert "def _publish_motion_state" not in runner
+    assert (
+        "if not self._stop_requested.is_set():\n"
+        "                    self._motion_state_pub.publish(Bool(data=False))"
+    ) in runner
+    assert "finally:\n            self._motion_state_pub.publish(Bool(data=False))" in runner
     assert "Preview stopped by operator." in runner
 
 
