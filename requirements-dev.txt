@@ -1,3 +1,5 @@
 pytest
 PyYAML
 ruff
+pandas
+matplotlib

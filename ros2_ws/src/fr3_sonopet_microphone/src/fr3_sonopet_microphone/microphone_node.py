@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from collections import deque
+from dataclasses import dataclass
 from queue import Full, Queue
+from threading import Lock
+from typing import Deque
 
 import numpy as np
 import rclpy
@@ -9,6 +13,15 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 
 from fr3_sonopet_microphone.audio_devices import select_input_device
+
+
+@dataclass(frozen=True)
+class QueuedAudioChunk:
+    """One microphone chunk with its stream index and source-gap status."""
+
+    index: int
+    samples: np.ndarray
+    gap_fill: bool
 
 
 class MicrophoneNode(Node):
@@ -25,7 +38,10 @@ class MicrophoneNode(Node):
         self._sample_rate_hz = int(self._required_parameter("sample_rate_hz"))
         self._channels = int(self._required_parameter("channels"))
         self._chunk_frames = int(self._required_parameter("chunk_frames"))
-        self._queue: Queue[np.ndarray] = Queue(maxsize=int(self._required_parameter("queue_depth")))
+        self._queue: Queue[QueuedAudioChunk] = Queue(maxsize=int(self._required_parameter("queue_depth")))
+        self._queue_lock = Lock()
+        self._pending_gap_chunks: Deque[QueuedAudioChunk] = deque()
+        self._next_chunk_index = 0
         self._dropped_chunks = 0
         self._stream = None
         self._publisher = self.create_publisher(AudioChunk, "/microphone/audio", 10)
@@ -77,29 +93,68 @@ class MicrophoneNode(Node):
 
         if status:
             self.get_logger().warning(f"Microphone stream status: {status}")
-        try:
-            self._queue.put_nowait(np.asarray(indata, dtype=np.int16).copy())
-        except Full:
-            self._dropped_chunks += 1
+        with self._queue_lock:
+            chunk_index = self._next_chunk_index
+            self._next_chunk_index += 1
+            if self._pending_gap_chunks:
+                self._pending_gap_chunks.append(self._zero_chunk(chunk_index))
+                self._dropped_chunks += 1
+                return
+            chunk = QueuedAudioChunk(
+                index=chunk_index,
+                samples=np.asarray(indata, dtype=np.int16).copy(),
+                gap_fill=False,
+            )
+            try:
+                self._queue.put_nowait(chunk)
+            except Full:
+                self._pending_gap_chunks.append(self._zero_chunk(chunk_index))
+                self._dropped_chunks += 1
+
+    def _zero_chunk(self, chunk_index: int) -> QueuedAudioChunk:
+        """Represent one dropped audio callback with silence at its stream index."""
+
+        return QueuedAudioChunk(
+            index=chunk_index,
+            samples=np.zeros((self._chunk_frames, self._channels), dtype=np.int16),
+            gap_fill=True,
+        )
+
+    def _next_publish_chunk(self) -> QueuedAudioChunk | None:
+        with self._queue_lock:
+            if not self._queue.empty():
+                return self._queue.get_nowait()
+            if self._pending_gap_chunks:
+                return self._pending_gap_chunks.popleft()
+            return None
+
+    def _take_dropped_chunk_count(self) -> int:
+        with self._queue_lock:
+            dropped = self._dropped_chunks
+            self._dropped_chunks = 0
+            return dropped
 
     def _publish_available_chunks(self) -> None:
         """Publish queued audio outside the real-time audio callback."""
 
-        while not self._queue.empty():
-            chunk = self._queue.get_nowait()
+        while True:
+            chunk = self._next_publish_chunk()
+            if chunk is None:
+                break
             msg = AudioChunk()
             msg.header.stamp = self.get_clock().now().to_msg()
             msg.header.frame_id = "microphone"
             msg.sample_rate_hz = self._sample_rate_hz
             msg.channels = self._channels
             msg.encoding = "S16_LE"
-            msg.samples = chunk.reshape(-1).tolist()
+            msg.chunk_index = chunk.index
+            msg.gap_fill = chunk.gap_fill
+            msg.samples = chunk.samples.reshape(-1).tolist()
             self._publisher.publish(msg)
 
-        if self._dropped_chunks:
-            dropped = self._dropped_chunks
-            self._dropped_chunks = 0
-            self.get_logger().warning(f"Dropped {dropped} microphone chunks")
+        dropped = self._take_dropped_chunk_count()
+        if dropped:
+            self.get_logger().warning(f"Filled {dropped} dropped microphone chunks with silence")
 
     def destroy_node(self) -> bool:
         if self._stream is not None:

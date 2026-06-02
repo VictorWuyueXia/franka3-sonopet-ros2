@@ -3,6 +3,8 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
+WARN_LOG_ARGS = ["--ros-args", "--log-level", "warn"]
+
 
 def generate_launch_description():
     config_path = PathJoinSubstitution(
@@ -16,6 +18,7 @@ def generate_launch_description():
                 name="microphone_node",
                 output="screen",
                 parameters=[config_path],
+                arguments=WARN_LOG_ARGS,
             )
         ]
     )

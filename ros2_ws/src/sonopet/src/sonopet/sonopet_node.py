@@ -28,6 +28,7 @@ from sonopet.artifacts import (
 
 CUTTING_TOPIC = "/sonopet/cutting"
 ARTIFACT_PATH_TOPIC = "/sonopet/artifact_path"
+SONOPET_READY_TOPIC = "/sonopet/ready"
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 5000
 SERVER_START_WAIT_S = 0.2
@@ -47,13 +48,35 @@ class SonopetNode(Node):
         self._started_at = 0.0
         self._sampling_active = threading.Event()
         self._sampling_thread: threading.Thread | None = None
-        self._footpedal = serial.Serial(FOOTPEDAL_PORT, FOOTPEDAL_BAUD, timeout=1)
         self._server_executable = (
             Path(get_package_prefix("sonopet")) / "lib" / "sonopet" / "sonopet_live_data"
         )
-        self._start_server()
+        try:
+            self._footpedal = serial.Serial(FOOTPEDAL_PORT, FOOTPEDAL_BAUD, timeout=1)
+        except serial.SerialException as exc:
+            self._fail_startup(
+                f"SONOPET ERROR: footpedal serial is not working on {FOOTPEDAL_PORT} "
+                f"at {FOOTPEDAL_BAUD} baud. Check USB connection and permissions.",
+                exc,
+            )
+        try:
+            self._start_server()
+        except Exception as exc:
+            self._fail_startup(
+                "SONOPET ERROR: vendor live-data server is not working. "
+                "Check the RISE tower connection and sonopet_live_data executable.",
+                exc,
+            )
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.connect((SERVER_HOST, SERVER_PORT))
+        try:
+            self._socket.connect((SERVER_HOST, SERVER_PORT))
+        except OSError as exc:
+            self._socket.close()
+            self._fail_startup(
+                f"SONOPET ERROR: cannot connect to live-data server at "
+                f"{SERVER_HOST}:{SERVER_PORT}. The robot workflow is blocked until Sonopet is online.",
+                exc,
+            )
         artifact_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -65,6 +88,8 @@ class SonopetNode(Node):
             self._set_artifact_root,
             artifact_qos,
         )
+        self._ready_pub = self.create_publisher(Bool, SONOPET_READY_TOPIC, artifact_qos)
+        self._ready_pub.publish(Bool(data=True))
         self._cutting_subscription = self.create_subscription(
             Bool,
             CUTTING_TOPIC,
@@ -76,16 +101,26 @@ class SonopetNode(Node):
             f"artifact_topic={ARTIFACT_PATH_TOPIC}, sample_rate_hz={SAMPLE_RATE_HZ}"
         )
 
+    def _fail_startup(self, message: str, exc: Exception) -> None:
+        self.get_logger().fatal(f"{message} Cause: {exc}")
+        raise RuntimeError(message) from exc
+
     def _start_server(self) -> None:
         # The vendor DAQ process owns live samples; any start failure should stop the node.
-        result = subprocess.run(
-            [str(self._server_executable), "start"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        if not self._server_executable.exists():
+            raise FileNotFoundError(self._server_executable)
+        try:
+            result = subprocess.run(
+                [str(self._server_executable), "start"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            details = "\n".join(part for part in [exc.stdout, exc.stderr] if part)
+            raise RuntimeError(details.strip() or str(exc)) from exc
         if "ERROR:" in result.stdout or "ERROR:" in result.stderr:
-            raise RuntimeError(result.stdout + result.stderr)
+            raise RuntimeError((result.stdout + result.stderr).strip())
         time.sleep(SERVER_START_WAIT_S)
 
     def _set_artifact_root(self, msg: String) -> None:

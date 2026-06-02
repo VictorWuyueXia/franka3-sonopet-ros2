@@ -9,7 +9,7 @@ def test_rgb_video_recorder_writes_video_and_timestamp_rows(tmp_path):
     recorder = RgbVideoRecorder(
         tmp_path / "rgb.avi",
         tmp_path / "rgb_timestamps.csv",
-        fps=30.0,
+        fps=15.0,
     )
 
     recorder.write_frame(np.zeros((8, 8, 3), dtype=np.uint8), 12, 345)

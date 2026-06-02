@@ -35,6 +35,10 @@ def test_recording_node_exposes_cutting_workflow_and_artifact_discard():
     assert "wall_clock_timestamp" in node_source
     assert "def _copy_config_artifacts(self) -> None:" in node_source
     assert "def _on_cutting_flag(self, msg: Bool) -> None:" in node_source
+    assert "self._require_workflow_ready()" in node_source
+    assert "SONOPET ERROR: Sonopet is not connected or not ready" in node_source
+    assert "VIDEO ERROR: no fresh RGB frames" in node_source
+    assert "not starting this cutting run" in node_source
     assert "def _start_recording_run(self) -> None:" in node_source
     assert "def _write_rgb_frame(self, camera_key: str, msg: Image) -> None:" in node_source
     assert "def _write_audio_packet(self, msg: AudioChunk) -> None:" in node_source
@@ -63,11 +67,29 @@ def test_recording_node_metadata_and_naming_policy_are_encoded():
     assert "camera_in_hand" in node_source
     assert "camera_fixed" in node_source
     assert "rgb.avi" in node_source
-    assert "audio.wav" in node_source
-    assert "audio_meta.json" in node_source
-    assert "manifest.json" in node_source
+    assert "audio_{run_index - 1}.wav" in node_source
+    assert "audio_meta_{active_run.index}.json" in node_source
+    assert "manifest_{active_run.index}.json" in node_source
     assert "started_at" in node_source
     assert "stopped_at" in node_source
     assert "frame_rate" in node_source
     assert "sample_rate_hz" in node_source
+    assert "chunks_received" in node_source
+    assert "chunks_gap_filled_source" in node_source
+    assert "chunks_gap_filled_recorder" in node_source
+    assert "samples_written" in node_source
+    assert "duration_s" in node_source
     assert "config" in node_source and "bringup" in node_source and "description" in node_source
+
+
+def test_recording_node_fills_missing_audio_chunks_with_silence():
+    package_root = Path(__file__).resolve().parents[1]
+    node_source = (
+        package_root / "src" / "fr3_sonopet_recording" / "recording_node.py"
+    ).read_text(encoding="utf-8")
+
+    assert "audio_next_chunk_index" in node_source
+    assert "missing_chunks = chunk_index - active_run.audio_next_chunk_index" in node_source
+    assert 'array("h", [0]) * len(samples)' in node_source
+    assert "Filled {missing_chunks} missing recorder audio chunks with silence" in node_source
+    assert "msg.gap_fill" in node_source

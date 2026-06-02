@@ -62,11 +62,16 @@ def test_sonopet_node_source_owns_cutting_artifact_and_footpedal_paths():
 
     assert 'CUTTING_TOPIC = "/sonopet/cutting"' in node
     assert 'ARTIFACT_PATH_TOPIC = "/sonopet/artifact_path"' in node
+    assert 'SONOPET_READY_TOPIC = "/sonopet/ready"' in node
+    assert "self._ready_pub.publish(Bool(data=True))" in node
     assert "create_subscription(\n            String" in node
     assert "create_subscription(\n            Bool" in node
     assert "serial.Serial(FOOTPEDAL_PORT, FOOTPEDAL_BAUD" in node
     assert 'self._footpedal.write(b"1")' in node
     assert 'self._footpedal.write(b"0")' in node
+    assert "SONOPET ERROR: footpedal serial is not working" in node
+    assert "SONOPET ERROR: vendor live-data server is not working" in node
+    assert "SONOPET ERROR: cannot connect to live-data server" in node
     assert 'self._socket.sendall(b"grab")' in node
     assert 'self._socket.sendall(b"stop")' in node
     assert 'sample = {"timestamp": wall_clock_timestamp(), "data": payload}' in node

@@ -161,8 +161,11 @@ def test_joint_segments_use_configured_cartesian_speed_duration():
         "fr3_joint7": 0.0,
     }
     points = joint_interpolation_points(start, goal, 0.2 / 0.03)
+    point_times = [_duration_seconds(point.time_from_start) for point in points]
 
-    assert _duration_seconds(points[-1].time_from_start) >= 0.2 / 0.03
+    assert point_times[0] == SEGMENT_SETTLING_TIME_S
+    assert all(later > earlier for earlier, later in zip(point_times[:-1], point_times[1:], strict=True))
+    assert point_times[-1] >= SEGMENT_SETTLING_TIME_S + 0.2 / 0.03
 
 
 def test_execute_token_and_beginning_pose_latch_are_encoded():
@@ -327,7 +330,7 @@ def test_active_franka_recovery_sequence_is_encoded():
     assert "GoalStatus.STATUS_SUCCEEDED" in runner
     assert "State(id=State.PRIMARY_STATE_ACTIVE, label=\"active\")" in runner
     assert "request.activate_controllers = list(FRANKA_RECOVERY_CONTROLLERS)" in runner
-    assert "request.strictness = SwitchController.Request.STRICT" in runner
+    assert "request.strictness = SwitchController.Request.BEST_EFFORT" in runner
     assert "request.activate_asap = True" in runner
 
 

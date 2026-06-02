@@ -6,6 +6,7 @@ from array import array
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event, Lock
+from time import monotonic
 
 import cv2
 import rclpy
@@ -33,6 +34,8 @@ from fr3_sonopet_recording.recording_config import (
 )
 
 ARTIFACT_PATH_TOPIC = "/sonopet/artifact_path"
+SONOPET_READY_TOPIC = "/sonopet/ready"
+VIDEO_STREAM_MAX_AGE_S = 1.0
 
 
 @dataclass
@@ -63,6 +66,12 @@ class ActiveRecordingRun:
     audio_sample_rate_hz: int | None = None
     audio_channels: int | None = None
     audio_encoding: str = "S16_LE"
+    audio_next_chunk_index: int | None = None
+    audio_chunks_received: int = 0
+    audio_chunks_gap_filled_source: int = 0
+    audio_chunks_gap_filled_recorder: int = 0
+    audio_chunks_written: int = 0
+    audio_samples_written: int = 0
     pointcloud_scans: list[PointCloudScan] = field(default_factory=list)
 
 
@@ -102,6 +111,8 @@ class RecordingNode(Node):
         self._run_count = 0
         self._active_run: ActiveRecordingRun | None = None
         self._run_lock = Lock()
+        self._sonopet_ready = False
+        self._last_rgb_received_s: dict[str, float | None] = {}
         self._run_id = experiment_run_id()
         self._artifact_path = self._config.artifact_root / self._run_id
         self._prepare_session_folder()
@@ -133,6 +144,7 @@ class RecordingNode(Node):
             )
             for camera in self._config.cameras
         ]
+        self._last_rgb_received_s = {camera.key: None for camera in self._config.cameras}
         self._audio_subscription = self.create_subscription(
             AudioChunk,
             self._config.audio_topic,
@@ -145,6 +157,13 @@ class RecordingNode(Node):
             self._config.cutting_topic,
             self._on_cutting_flag,
             10,
+            callback_group=self._callback_group,
+        )
+        self._sonopet_ready_subscription = self.create_subscription(
+            Bool,
+            SONOPET_READY_TOPIC,
+            self._on_sonopet_ready,
+            artifact_qos,
             callback_group=self._callback_group,
         )
         self._record_server = ActionServer(
@@ -221,9 +240,39 @@ class RecordingNode(Node):
         with self._run_lock:
             recording_active = self._active_run is not None
         if msg.data and not recording_active:
+            if not self._require_workflow_ready():
+                return
             self._start_recording_run()
         if not msg.data and recording_active:
             self._stop_recording_run()
+
+    def _on_sonopet_ready(self, msg: Bool) -> None:
+        self._sonopet_ready = bool(msg.data)
+
+    def _require_workflow_ready(self) -> bool:
+        if not self._sonopet_ready:
+            self._report_blocked_run(
+                f"SONOPET ERROR: Sonopet is not connected or not ready on {SONOPET_READY_TOPIC}; "
+                "not starting this cutting run."
+            )
+            return False
+        now = monotonic()
+        stale = [
+            camera.key
+            for camera in self._config.cameras
+            if self._last_rgb_received_s.get(camera.key) is None
+            or now - float(self._last_rgb_received_s[camera.key]) > VIDEO_STREAM_MAX_AGE_S
+        ]
+        if stale:
+            self._report_blocked_run(
+                f"VIDEO ERROR: no fresh RGB frames from camera(s) {', '.join(stale)} within "
+                f"{VIDEO_STREAM_MAX_AGE_S:.1f}s; not starting this cutting run."
+            )
+            return False
+        return True
+
+    def _report_blocked_run(self, message: str) -> None:
+        self.get_logger().error(message)
 
     def _start_recording_run(self) -> None:
         run_index = self._run_count + 1
@@ -242,7 +291,7 @@ class RecordingNode(Node):
             rgb_paths=rgb_paths,
             rgb_writers={camera.key: None for camera in self._config.cameras},
             rgb_counts={camera.key: 0 for camera in self._config.cameras},
-            audio_path=self._next_existing_name(self._artifact_path / "audio" / "audio.wav"),
+            audio_path=self._artifact_path / "audio" / f"audio_{run_index - 1}.wav",
         )
         with self._run_lock:
             if self._active_run is not None:
@@ -262,6 +311,7 @@ class RecordingNode(Node):
 
     def _write_rgb_frame(self, camera_key: str, msg: Image) -> None:
         frame_bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        self._last_rgb_received_s[camera_key] = monotonic()
         with self._run_lock:
             if self._active_run is None:
                 return
@@ -283,25 +333,58 @@ class RecordingNode(Node):
             self._active_run.rgb_counts[camera_key] += 1
 
     def _write_audio_packet(self, msg: AudioChunk) -> None:
-        samples = array("h", (int(value) for value in msg.samples)).tobytes()
+        samples = array("h", (int(value) for value in msg.samples))
+        channels = int(msg.channels)
+        if channels <= 0 or not samples or len(samples) % channels != 0:
+            raise ValueError("Audio chunk samples must be nonempty and channel-aligned")
         with self._run_lock:
             if self._active_run is None:
                 return
-            if self._active_run.audio_wav is None:
-                self._active_run.audio_sample_rate_hz = int(msg.sample_rate_hz)
-                self._active_run.audio_channels = int(msg.channels)
-                self._active_run.audio_encoding = str(msg.encoding)
-                self._active_run.audio_wav = wave.open(str(self._active_run.audio_path), "wb")
-                self._active_run.audio_wav.setnchannels(self._active_run.audio_channels)
-                self._active_run.audio_wav.setsampwidth(2)
-                self._active_run.audio_wav.setframerate(self._active_run.audio_sample_rate_hz)
-            elif (
-                self._active_run.audio_sample_rate_hz != int(msg.sample_rate_hz)
-                or self._active_run.audio_channels != int(msg.channels)
-                or self._active_run.audio_encoding != str(msg.encoding)
-            ):
-                raise ValueError("Audio format changed during recording")
-            self._active_run.audio_wav.writeframes(samples)
+            active_run = self._active_run
+            self._prepare_audio_stream(active_run, msg)
+            chunk_index = int(msg.chunk_index)
+            if active_run.audio_next_chunk_index is None:
+                active_run.audio_next_chunk_index = chunk_index
+            if chunk_index < active_run.audio_next_chunk_index:
+                raise ValueError(
+                    f"Audio chunk index moved backward: got {chunk_index}, "
+                    f"expected {active_run.audio_next_chunk_index}"
+                )
+            missing_chunks = chunk_index - active_run.audio_next_chunk_index
+            if missing_chunks:
+                zero_samples = array("h", [0]) * len(samples)
+                for _ in range(missing_chunks):
+                    self._write_audio_samples(active_run, zero_samples)
+                active_run.audio_chunks_gap_filled_recorder += missing_chunks
+                self.get_logger().warning(
+                    f"Filled {missing_chunks} missing recorder audio chunks with silence"
+                )
+            if msg.gap_fill:
+                active_run.audio_chunks_gap_filled_source += 1
+            active_run.audio_chunks_received += 1
+            self._write_audio_samples(active_run, samples)
+            active_run.audio_next_chunk_index = chunk_index + 1
+
+    def _prepare_audio_stream(self, active_run: ActiveRecordingRun, msg: AudioChunk) -> None:
+        if active_run.audio_wav is None:
+            active_run.audio_sample_rate_hz = int(msg.sample_rate_hz)
+            active_run.audio_channels = int(msg.channels)
+            active_run.audio_encoding = str(msg.encoding)
+            active_run.audio_wav = wave.open(str(active_run.audio_path), "wb")
+            active_run.audio_wav.setnchannels(active_run.audio_channels)
+            active_run.audio_wav.setsampwidth(2)
+            active_run.audio_wav.setframerate(active_run.audio_sample_rate_hz)
+        elif (
+            active_run.audio_sample_rate_hz != int(msg.sample_rate_hz)
+            or active_run.audio_channels != int(msg.channels)
+            or active_run.audio_encoding != str(msg.encoding)
+        ):
+            raise ValueError("Audio format changed during recording")
+
+    def _write_audio_samples(self, active_run: ActiveRecordingRun, samples: array) -> None:
+        active_run.audio_wav.writeframes(samples.tobytes())
+        active_run.audio_chunks_written += 1
+        active_run.audio_samples_written += len(samples)
 
     def _stop_recording_run(self) -> None:
         stopped_at = wall_clock_timestamp()
@@ -342,8 +425,8 @@ class RecordingNode(Node):
 
     def _write_run_metadata(self, active_run: ActiveRecordingRun, stopped_at: float) -> None:
         run_root = active_run.artifact_path
-        audio_meta_path = self._next_existing_name(run_root / "audio" / "audio_meta.json")
-        manifest_path = self._next_existing_name(run_root / "manifest.json")
+        audio_meta_path = run_root / "audio" / f"audio_meta_{active_run.index}.json"
+        manifest_path = run_root / f"manifest_{active_run.index}.json"
         audio_meta = {
             "run": active_run.label,
             "started_at": active_run.started_at,
@@ -351,6 +434,17 @@ class RecordingNode(Node):
             "stopped_at": stopped_at,
             "stopped_at_local": local_timestamp_label(stopped_at),
             "sample_rate_hz": active_run.audio_sample_rate_hz,
+            "chunks_received": active_run.audio_chunks_received,
+            "chunks_gap_filled_source": active_run.audio_chunks_gap_filled_source,
+            "chunks_gap_filled_recorder": active_run.audio_chunks_gap_filled_recorder,
+            "chunks_written": active_run.audio_chunks_written,
+            "samples_written": active_run.audio_samples_written,
+            "duration_s": (
+                active_run.audio_samples_written
+                / float(active_run.audio_sample_rate_hz * active_run.audio_channels)
+                if active_run.audio_sample_rate_hz and active_run.audio_channels
+                else 0.0
+            ),
             "wav": _relative_artifact_path(run_root, active_run.audio_path),
         }
         manifest = {
@@ -448,6 +542,7 @@ class RecordingNode(Node):
             self.destroy_subscription(subscription)
         self.destroy_subscription(self._audio_subscription)
         self.destroy_subscription(self._cutting_subscription)
+        self.destroy_subscription(self._sonopet_ready_subscription)
         if self._startup_capture_timer is not None:
             self.destroy_timer(self._startup_capture_timer)
             self._startup_capture_timer = None

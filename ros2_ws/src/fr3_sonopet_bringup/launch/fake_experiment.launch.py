@@ -9,6 +9,8 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
+WARN_LOG_ARGS = ["--ros-args", "--log-level", "warn"]
+
 
 def _description_include(name: str):
     # Fake launch still publishes the tool frame so TF consumers see the same graph.
@@ -47,6 +49,7 @@ def generate_launch_description():
                 name="raster_planner_node",
                 output="screen",
                 parameters=[raster_config],
+                arguments=WARN_LOG_ARGS,
             ),
             Node(
                 package="fr3_sonopet_motion",
@@ -54,6 +57,7 @@ def generate_launch_description():
                 name="motion_runner_node",
                 output="screen",
                 parameters=[motion_config],
+                arguments=WARN_LOG_ARGS,
             ),
             Node(
                 package="fr3_sonopet_supervisor",
@@ -61,6 +65,7 @@ def generate_launch_description():
                 name="experiment_supervisor_node",
                 output="screen",
                 parameters=[{"fake_run": True}],
+                arguments=WARN_LOG_ARGS,
             ),
         ]
     )

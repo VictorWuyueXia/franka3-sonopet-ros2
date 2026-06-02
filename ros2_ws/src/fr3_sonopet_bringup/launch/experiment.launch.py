@@ -10,6 +10,8 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
+WARN_LOG_ARGS = ["--ros-args", "--log-level", "warn"]
+
 
 def _include(name: str):
     # Local includes keep each hardware boundary readable in isolation.
@@ -65,6 +67,7 @@ def generate_launch_description():
                 name="raster_planner_node",
                 output="screen",
                 parameters=[raster_config],
+                arguments=WARN_LOG_ARGS,
             ),
             Node(
                 package="fr3_sonopet_motion",
@@ -72,24 +75,27 @@ def generate_launch_description():
                 name="motion_runner_node",
                 output="screen",
                 parameters=[motion_config],
+                arguments=WARN_LOG_ARGS,
             ),
             Node(
                 package="fr3_sonopet_supervisor",
                 executable="experiment_supervisor_node",
                 name="experiment_supervisor_node",
                 output="screen",
+                arguments=WARN_LOG_ARGS,
             ),
             Node(
                 package="fr3_sonopet_bringup",
                 executable="shutdown_manager_node",
                 name="shutdown_manager_node",
                 output="screen",
+                arguments=WARN_LOG_ARGS,
             ),
             Node(
                 package="rviz2",
                 executable="rviz2",
                 name="rviz2",
-                arguments=["-d", rviz_config],
+                arguments=["-d", rviz_config, *WARN_LOG_ARGS],
                 condition=IfCondition(LaunchConfiguration("rviz")),
                 output="screen",
             ),

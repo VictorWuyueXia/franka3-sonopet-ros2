@@ -324,7 +324,7 @@ class MotionRunnerNode(Node):
         request = SwitchController.Request()
         request.activate_controllers = list(FRANKA_RECOVERY_CONTROLLERS)
         request.deactivate_controllers = []
-        request.strictness = SwitchController.Request.STRICT
+        request.strictness = SwitchController.Request.BEST_EFFORT
         request.activate_asap = True
         request.timeout = Duration(sec=1)
         response = wait_future(self._switch_controller_client.call_async(request))

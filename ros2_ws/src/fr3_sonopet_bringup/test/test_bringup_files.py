@@ -119,6 +119,8 @@ def test_launch_files_use_sensor_only_recording_defaults():
     pointcloud_arg = 'launch_arguments={"pointcloud_enable": LaunchConfiguration("rviz")}'
     assert pointcloud_arg in experiment_launch
     assert "parameters=[raster_config]" in experiment_launch
+    assert '"--ros-args", "--log-level", "warn"' in experiment_launch
+    assert 'arguments=["-d", rviz_config, *WARN_LOG_ARGS]' in experiment_launch
     assert 'executable="shutdown_manager_node"' in experiment_launch
     assert "shutdown_manager_node = fr3_sonopet_bringup.shutdown_manager:main" in setup_py
     assert "<exec_depend>fr3_sonopet_interfaces</exec_depend>" in package_xml
@@ -143,17 +145,21 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "recording_topics.yaml" in recording_launch
     assert "cameras.yaml" in recording_launch
     assert "pointcloud.yaml" in recording_launch
+    assert "Recording node exited; aborting experiment launch." not in recording_launch
     assert 'package="fr3_sonopet_pointcloud"' in recording_launch
     assert 'executable="pointcloud_node"' in recording_launch
     assert "<exec_depend>fr3_sonopet_pointcloud</exec_depend>" in package_xml
     assert 'package="sonopet"' in recording_launch
     assert 'executable="sonopet_node"' in recording_launch
+    assert "Sonopet node exited; aborting experiment launch." not in recording_launch
     assert "<exec_depend>sonopet</exec_depend>" in package_xml
     assert "bringup_config_dir" in recording_launch
     assert "description_config_dir" in recording_launch
     assert "fr3_sonopet_description" in recording_launch
     assert "/sonopet/pointcloud/status_marker" not in rviz
     assert "microphone.yaml" in microphone_launch
+    assert '"--ros-args", "--log-level", "warn"' in microphone_launch
+    assert '"--ros-args", "--log-level", "warn"' in recording_launch
     assert "SHUTDOWN_SERVICE = \"/sonopet/shutdown\"" in shutdown_manager
     assert "STOP_MOTION_ACTION = \"/fr3/stop_motion\"" in shutdown_manager
     assert "StopMotion" in shutdown_manager

@@ -127,7 +127,7 @@ def joint_interpolation_points(
         point.positions = [
             (1.0 - ratio) * float(start[name]) + ratio * float(goal[name]) for name in JOINT_NAMES
         ]
-        elapsed_s = max(float(index + 1) / float(steps + 1) * duration_s, SEGMENT_SETTLING_TIME_S)
+        elapsed_s = SEGMENT_SETTLING_TIME_S + ratio * duration_s
         sec = int(math.floor(elapsed_s))
         point.time_from_start.sec = sec
         point.time_from_start.nanosec = int(round((elapsed_s - float(sec)) * 1_000_000_000.0))

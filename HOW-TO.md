@@ -331,14 +331,15 @@ For arm-only checks without sensors, use **Fake arm** (section 4) in terminal 1 
 
 ## 9. Common pitfalls
 
-1. **`ros2: command not found`** — source `scripts/source_ubuntu24_ros_jazzy.sh` (or `/opt/ros/jazzy/setup.bash`).
-2. **`Package 'fr3_sonopet_bringup'` or `Package 'sonopet' not found`** — build with `colcon build` and source again from the repo root.
-3. **`franka_hardware` compile error (`getTargetFeedback`, headers under `/usr/local/include/franka`)** — source `scripts/source_ubuntu24_ros_jazzy.sh` before building and add `-DCMAKE_IGNORE_PREFIX_PATH=/usr/local` to every `colcon build` (see section 2).
-4. **`mobile_fr3_duo_trajectory_controller` CMake/symlink install error** — add `--packages-skip mobile_fr3_duo_trajectory_controller` to every full-workspace `colcon build` (section 2). If `fr3_sonopet_bringup` still built, the Sonopet stack is usable.
+1. `**ros2: command not found`** — source `scripts/source_ubuntu24_ros_jazzy.sh` (or `/opt/ros/jazzy/setup.bash`).
+2. `**Package 'fr3_sonopet_bringup'` or `Package 'sonopet' not found**` — build with `colcon build` and source again from the repo root.
+3. `**franka_hardware` compile error (`getTargetFeedback`, headers under `/usr/local/include/franka`)** — source `scripts/source_ubuntu24_ros_jazzy.sh` before building and add `-DCMAKE_IGNORE_PREFIX_PATH=/usr/local` to every `colcon build` (see section 2).
+4. `**mobile_fr3_duo_trajectory_controller` CMake/symlink install error** — add `--packages-skip mobile_fr3_duo_trajectory_controller` to every full-workspace `colcon build` (section 2). If `fr3_sonopet_bringup` still built, the Sonopet stack is usable.
 5. **Terminal closes right after `colcon build` finishes** — treat as success when `ros2 pkg list | grep -E '^(fr3_sonopet|sonopet$)'` lists all project packages; re-source and continue.
-6. **`not found: ".../local_setup.bash"` when sourcing** — leftover from an interrupted build. Either finish a successful build or run `rm -rf ros2_ws/build ros2_ws/install ros2_ws/log` and rebuild from section 2.
-7. **`realsense2_camera` fails on missing `librealsense2.so.2.56.4`** — clone `librealsense` into `ros2_ws/src/realsense-ros/`, skip the rosdep `librealsense2` key, and rebuild with the section 2 `CMAKE_IGNORE_PATH` command.
+6. `**not found: ".../local_setup.bash"` when sourcing** — leftover from an interrupted build. Either finish a successful build or run `rm -rf ros2_ws/build ros2_ws/install ros2_ws/log` and rebuild from section 2.
+7. `**realsense2_camera` fails on missing `librealsense2.so.2.56.4`** — clone `librealsense` into `ros2_ws/src/realsense-ros/`, skip the rosdep `librealsense2` key, and rebuild with the section 2 `CMAKE_IGNORE_PATH` command.
 8. **Mic node dies immediately** — no matching USB mic; adjust `microphone.yaml`.
 9. **No camera images** — wrong serial in `cameras.yaml`, USB bandwidth, or camera unplugged; check `ros2 topic list` for `/RealSense_D405/...`.
 10. **Empty Planning PointCloud** — use **Full boot** (`rviz:=true`); wait for planner capture log; confirm TF from in-hand camera to `fr3_link0`.
 11. **Click does nothing** — toolbar **Publish Point** on the planning cloud; read `raster_planner_node` for `Raster plan rejected:`.
+
