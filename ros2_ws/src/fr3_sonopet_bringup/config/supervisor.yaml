@@ -1,0 +1,2 @@
+supervisor:
+  joint_state_downsample: 10

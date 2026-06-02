@@ -180,8 +180,9 @@ change globally to re-domain the topics:
 
 + graceful shutdown
 
++ supervisor record joint spave traj
 
-- supervisor record joint spave traj
+
 - what happens if I publish another point while motion
 
 
