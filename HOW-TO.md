@@ -300,7 +300,7 @@ ros2 action send_goal /realsense/record_experiment \
 Each stack launch creates one timestamped session folder, for example
 `ros2_ws/artifacts/experiments/20260527T131514/`. Artifacts include camera
 videos, audio, point-cloud snapshots when available, and `manifest.json`.
-Each cutting interval is tagged `run_1`, `run_2`, `run_3` in the manifest.
+Each cutting interval is tagged `run_0`, `run_1`, `run_2` in the manifest.
 `started_at` and `stopped_at` carry both Sonopet-style epoch seconds (for
 example `1779906518.007343`) and a compact local label (for example
 `202605271551`).

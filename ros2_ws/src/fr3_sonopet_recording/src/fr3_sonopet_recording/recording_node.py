@@ -111,6 +111,7 @@ class RecordingNode(Node):
         self._run_count = 0
         self._active_run: ActiveRecordingRun | None = None
         self._run_lock = Lock()
+        self._boundary_lock = Lock()
         self._sonopet_ready = False
         self._last_rgb_received_s: dict[str, float | None] = {}
         self._run_id = experiment_run_id()
@@ -237,14 +238,16 @@ class RecordingNode(Node):
         return response
 
     def _on_cutting_flag(self, msg: Bool) -> None:
-        with self._run_lock:
-            recording_active = self._active_run is not None
-        if msg.data and not recording_active:
-            if not self._require_workflow_ready():
-                return
-            self._start_recording_run()
-        if not msg.data and recording_active:
-            self._stop_recording_run()
+        # Boundary work owns the physical D405s, so transitions cannot overlap with each other.
+        with self._boundary_lock:
+            with self._run_lock:
+                recording_active = self._active_run is not None
+            if msg.data and not recording_active:
+                if not self._require_workflow_ready():
+                    return
+                self._start_recording_run()
+            if not msg.data and recording_active:
+                self._stop_recording_run()
 
     def _on_sonopet_ready(self, msg: Bool) -> None:
         self._sonopet_ready = bool(msg.data)
@@ -275,39 +278,44 @@ class RecordingNode(Node):
         self.get_logger().error(message)
 
     def _start_recording_run(self) -> None:
-        run_index = self._run_count + 1
+        run_index = self._run_count
         run_label = recording_run_label(run_index)
         rgb_paths = {
-            camera.key: self._next_existing_name(
-                _camera_dir(self._artifact_path, camera.key) / "rgb.avi"
-            )
+            camera.key: _camera_dir(self._artifact_path, camera.key) / f"rgb_{run_index}.avi"
             for camera in self._config.cameras
         }
         active_run = ActiveRecordingRun(
             label=run_label,
-            index=run_index - 1,
-            started_at=wall_clock_timestamp(),
+            index=run_index,
+            started_at=0.0,
             artifact_path=self._artifact_path,
             rgb_paths=rgb_paths,
             rgb_writers={camera.key: None for camera in self._config.cameras},
             rgb_counts={camera.key: 0 for camera in self._config.cameras},
-            audio_path=self._artifact_path / "audio" / f"audio_{run_index - 1}.wav",
+            audio_path=self._artifact_path / "audio" / f"audio_{run_index}.wav",
         )
+        try:
+            start_scans = self._capture_pointcloud(
+                "pointcloud_start",
+                False,
+                True,
+                None,
+                active_run.artifact_path,
+            )
+        except Exception as exc:
+            self.get_logger().error(
+                f"RECORDING ERROR: {run_label} was not recorded because "
+                f"pointcloud_start failed: {exc}"
+            )
+            raise
+        # Media recording opens only after the pointcloud start boundary is complete.
+        active_run.started_at = wall_clock_timestamp()
+        active_run.pointcloud_scans.extend(start_scans)
         with self._run_lock:
             if self._active_run is not None:
-                return
+                raise RuntimeError("Recording run became active during pointcloud_start")
             self._active_run = active_run
             self._run_count += 1
-        start_scans = self._capture_pointcloud(
-            "pointcloud_start",
-            False,
-            True,
-            None,
-            active_run.artifact_path,
-        )
-        with self._run_lock:
-            if self._active_run is active_run:
-                active_run.pointcloud_scans.extend(start_scans)
 
     def _write_rgb_frame(self, camera_key: str, msg: Image) -> None:
         frame_bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
@@ -390,8 +398,10 @@ class RecordingNode(Node):
         stopped_at = wall_clock_timestamp()
         with self._run_lock:
             active_run = self._active_run
+            self._active_run = None
         if active_run is None:
             return
+        self._close_run_files(active_run)
         boundary_error: Exception | None = None
         try:
             active_run.pointcloud_scans.extend(
@@ -406,11 +416,9 @@ class RecordingNode(Node):
         except Exception as exc:
             boundary_error = exc
             self.get_logger().error(
-                f"Stop pointcloud capture failed after recording stopped: {exc}"
+                f"RECORDING ERROR: {active_run.label} is incomplete because "
+                f"pointcloud_stop failed after recording stopped: {exc}"
             )
-        with self._run_lock:
-            self._active_run = None
-        self._close_run_files(active_run)
         self._write_run_metadata(active_run, stopped_at)
         if boundary_error is not None:
             raise boundary_error
@@ -523,16 +531,6 @@ class RecordingNode(Node):
             if artifact_path
         ]
 
-    def _next_existing_name(self, path: Path) -> Path:
-        if not path.exists():
-            return path
-        index = 1
-        while True:
-            candidate = path.with_name(f"{path.stem}_{index}{path.suffix}")
-            if not candidate.exists():
-                return candidate
-            index += 1
-
     def _discard_experiment_folder(self) -> None:
         if self._artifact_path.exists():
             shutil.rmtree(self._artifact_path)
@@ -546,8 +544,9 @@ class RecordingNode(Node):
         if self._startup_capture_timer is not None:
             self.destroy_timer(self._startup_capture_timer)
             self._startup_capture_timer = None
-        if self._active_run is not None:
-            self._stop_recording_run()
+        with self._boundary_lock:
+            if self._active_run is not None:
+                self._stop_recording_run()
         if not self._save_artifacts_enabled:
             self._discard_experiment_folder()
         return super().destroy_node()

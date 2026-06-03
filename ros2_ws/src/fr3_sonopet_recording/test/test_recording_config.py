@@ -72,8 +72,8 @@ def test_experiment_run_id_uses_local_wall_clock():
 
 
 def test_recording_run_label_names_cutting_intervals():
-    assert recording_run_label(1) == "run_1"
-    assert recording_run_label(3) == "run_3"
+    assert recording_run_label(0) == "run_0"
+    assert recording_run_label(2) == "run_2"
 
 
 def test_wall_clock_timestamp_is_epoch_seconds():

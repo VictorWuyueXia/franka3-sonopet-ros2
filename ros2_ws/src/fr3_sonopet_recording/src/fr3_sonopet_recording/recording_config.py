@@ -35,8 +35,8 @@ def experiment_run_id() -> str:
 
 def recording_run_label(run_index: int) -> str:
     """Return the manifest run tag for one cutting interval within a session."""
-    if run_index < 1:
-        raise ValueError(f"Recording run index must be >= 1, got {run_index}")
+    if run_index < 0:
+        raise ValueError(f"Recording run index must be >= 0, got {run_index}")
     return f"run_{run_index}"
 
 
