@@ -196,7 +196,12 @@ class RecordingNode(Node):
         # The startup cloud gives RViz and raster planning a visible surface before operator input.
         self.destroy_timer(self._startup_capture_timer)
         self._startup_capture_timer = None
-        self._capture_pointcloud("pointcloud_start", True, False, None)
+        try:
+            self._capture_pointcloud("pointcloud_start", True, False, None)
+        except Exception as exc:
+            self.get_logger().warning(
+                f"Startup planning cloud capture failed; recording remains available: {exc}"
+            )
 
     def _prepare_session_folder(self) -> None:
         self._artifact_path.mkdir(parents=True, exist_ok=True)

@@ -39,6 +39,7 @@ def test_recording_node_exposes_cutting_workflow_and_artifact_discard():
     assert "SONOPET ERROR: Sonopet is not connected or not ready" in node_source
     assert "VIDEO ERROR: no fresh RGB frames" in node_source
     assert "not starting this cutting run" in node_source
+    assert "Startup planning cloud capture failed; recording remains available" in node_source
     assert "RECORDING ERROR: {run_label} was not recorded" in node_source
     assert "pointcloud_stop failed after recording stopped" in node_source
     assert "def _start_recording_run(self) -> None:" in node_source
