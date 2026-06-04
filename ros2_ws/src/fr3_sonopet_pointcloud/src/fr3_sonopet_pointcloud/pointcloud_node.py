@@ -157,60 +157,80 @@ class PointcloudNode(Node):
         point_counts: list[int] = []
         timestamps: list[float] = []
         timestamp_locals: list[str] = []
+        failures: list[str] = []
 
         for camera in self._config.cameras:
             feedback = CapturePointCloud.Feedback()
             feedback.phase = f"{camera.key}_{label}"
             goal_handle.publish_feedback(feedback)
-            cloud_msg = self._capture_camera_cloud(camera)
-            xyz, rgb = pointcloud_xyz_rgb(cloud_msg)
-            trimmed_xyz, trimmed_rgb = trim_sensor_cloud(
-                xyz,
-                rgb,
-                self._config.trim_distance_m,
-                self._config.trim_farthest_fraction,
-            )
-            base_from_cloud = self._base_from_cloud_matrix(cloud_msg.header.frame_id)
-            base_xyz = transform_points(trimmed_xyz, base_from_cloud)
-            processed_cloud = make_colored_cloud(base_xyz, trimmed_rgb, cloud_msg.header.stamp)
-            captured_at = wall_clock_timestamp()
-            timestamp_local = local_timestamp_label(captured_at)
-            artifact_path = ""
-
-            if goal_handle.request.save_artifacts:
-                pcd_base = camera_dir(root, camera.key) / f"{label}.pcd"
-                pcd_path = (
-                    next_indexed_name(pcd_base)
-                    if label in {"pointcloud_start", "pointcloud_stop"}
-                    else next_existing_name(pcd_base)
+            try:
+                cloud_msg = self._capture_camera_cloud(camera)
+                xyz, rgb = pointcloud_xyz_rgb(cloud_msg)
+                trimmed_xyz, trimmed_rgb = trim_sensor_cloud(
+                    xyz,
+                    rgb,
+                    self._config.trim_distance_m,
+                    self._config.trim_farthest_fraction,
                 )
-                point_count = write_colored_pcd(pcd_path, base_xyz, trimmed_rgb)
-                artifact_path = str(pcd_path)
-                self._append_metadata(
-                    root,
-                    camera.key,
-                    label,
-                    pcd_path,
-                    point_count,
-                    captured_at,
-                    timestamp_local,
+                base_from_cloud = self._base_from_cloud_matrix(cloud_msg.header.frame_id)
+                base_xyz = transform_points(trimmed_xyz, base_from_cloud)
+                processed_cloud = make_colored_cloud(base_xyz, trimmed_rgb, cloud_msg.header.stamp)
+                captured_at = wall_clock_timestamp()
+                timestamp_local = local_timestamp_label(captured_at)
+                artifact_path = ""
+
+                if goal_handle.request.save_artifacts:
+                    pcd_base = camera_dir(root, camera.key) / f"{label}.pcd"
+                    pcd_path = (
+                        next_indexed_name(pcd_base)
+                        if label in {"pointcloud_start", "pointcloud_stop"}
+                        else next_existing_name(pcd_base)
+                    )
+                    point_count = write_colored_pcd(pcd_path, base_xyz, trimmed_rgb)
+                    artifact_path = str(pcd_path)
+                    self._append_metadata(
+                        root,
+                        camera.key,
+                        label,
+                        pcd_path,
+                        point_count,
+                        captured_at,
+                        timestamp_local,
+                    )
+                else:
+                    point_count = int(base_xyz.shape[0])
+                self.get_logger().info(
+                    f"Pointcloud capture artifact: label={label}, camera={camera.key}, "
+                    f"saved={bool(artifact_path)}, path={artifact_path}, points={point_count}"
                 )
-            else:
-                point_count = int(base_xyz.shape[0])
 
-            if goal_handle.request.publish_planning_cloud and camera.key == "in_hand":
-                self._captured_cloud_pub.publish(processed_cloud)
-                self._planning_cloud_pub.publish(processed_cloud)
+                if goal_handle.request.publish_planning_cloud and camera.key == "in_hand":
+                    self._captured_cloud_pub.publish(processed_cloud)
+                    self._planning_cloud_pub.publish(processed_cloud)
 
-            camera_keys.append(camera.key)
-            artifact_paths.append(artifact_path)
-            point_counts.append(point_count)
-            timestamps.append(captured_at)
-            timestamp_locals.append(timestamp_local)
+                camera_keys.append(camera.key)
+                artifact_paths.append(artifact_path)
+                point_counts.append(point_count)
+                timestamps.append(captured_at)
+                timestamp_locals.append(timestamp_local)
+            except Exception as exc:
+                failure = f"{camera.key}: {exc}"
+                failures.append(failure)
+                self.get_logger().error(
+                    f"POINTCLOUD ERROR: camera capture failed: label={label}, {failure}"
+                )
+
+        if not camera_keys:
+            goal_handle.abort()
+            result.success = False
+            result.message = "; ".join(failures)
+            return result
 
         goal_handle.succeed()
         result.success = True
         result.message = f"Captured {len(camera_keys)} pointcloud scans."
+        if failures:
+            result.message = f"{result.message} Failed cameras: {'; '.join(failures)}"
         result.camera_keys = camera_keys
         result.artifact_paths = artifact_paths
         result.point_counts = point_counts
@@ -225,44 +245,51 @@ class PointcloudNode(Node):
             camera.parameter_service,
             callback_group=self._callback_group,
         )
-        if not client.wait_for_service(timeout_sec=2.0):
-            raise RuntimeError(f"Parameter service unavailable: {camera.parameter_service}")
-        request = SetParameters.Request()
-        request.parameters = [
-            Parameter("pointcloud.enable", Parameter.Type.BOOL, True).to_parameter_msg()
-        ]
-        response = wait_future(client.call_async(request))
-        failures = [result.reason for result in response.results if not result.successful]
-        if failures:
-            raise RuntimeError("; ".join(failures))
+        subscription = None
+        enabled = False
+        try:
+            if not client.wait_for_service(timeout_sec=2.0):
+                raise RuntimeError(f"Parameter service unavailable: {camera.parameter_service}")
+            request = SetParameters.Request()
+            request.parameters = [
+                Parameter("pointcloud.enable", Parameter.Type.BOOL, True).to_parameter_msg()
+            ]
+            response = wait_future(client.call_async(request))
+            failures = [result.reason for result in response.results if not result.successful]
+            if failures:
+                raise RuntimeError("; ".join(failures))
+            enabled = True
 
-        received = Event()
-        cloud: dict[str, PointCloud2] = {}
+            received = Event()
+            cloud: dict[str, PointCloud2] = {}
 
-        def _on_cloud(msg: PointCloud2) -> None:
-            cloud["msg"] = msg
-            received.set()
+            def _on_cloud(msg: PointCloud2) -> None:
+                cloud["msg"] = msg
+                received.set()
 
-        subscription = self.create_subscription(
-            PointCloud2,
-            camera.pointcloud_topic,
-            _on_cloud,
-            qos_profile_sensor_data,
-            callback_group=self._callback_group,
-        )
-        if not received.wait(timeout=self._config.snapshot_timeout_sec):
-            raise RuntimeError(f"Timed out waiting for {camera.pointcloud_topic}")
-        self.destroy_subscription(subscription)
-
-        request.parameters = [
-            Parameter("pointcloud.enable", Parameter.Type.BOOL, False).to_parameter_msg()
-        ]
-        response = wait_future(client.call_async(request))
-        failures = [result.reason for result in response.results if not result.successful]
-        if failures:
-            raise RuntimeError("; ".join(failures))
-        self.destroy_client(client)
-        return cloud["msg"]
+            subscription = self.create_subscription(
+                PointCloud2,
+                camera.pointcloud_topic,
+                _on_cloud,
+                qos_profile_sensor_data,
+                callback_group=self._callback_group,
+            )
+            if not received.wait(timeout=self._config.snapshot_timeout_sec):
+                raise RuntimeError(f"Timed out waiting for {camera.pointcloud_topic}")
+            return cloud["msg"]
+        finally:
+            if subscription is not None:
+                self.destroy_subscription(subscription)
+            if enabled:
+                request = SetParameters.Request()
+                request.parameters = [
+                    Parameter("pointcloud.enable", Parameter.Type.BOOL, False).to_parameter_msg()
+                ]
+                response = wait_future(client.call_async(request))
+                failures = [result.reason for result in response.results if not result.successful]
+                if failures:
+                    self.get_logger().error("; ".join(failures))
+            self.destroy_client(client)
 
     def _base_from_cloud_matrix(self, cloud_frame: str) -> np.ndarray:
         if cloud_frame == BASE_FRAME:

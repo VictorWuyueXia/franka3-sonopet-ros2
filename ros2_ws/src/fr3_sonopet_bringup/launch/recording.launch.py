@@ -3,7 +3,8 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
-WARN_LOG_ARGS = ["--ros-args", "--log-level", "warn"]
+INFO_LOG_ARGS = ["--ros-args", "--log-level", "info"]
+RECORDER_DEBUG_LOG_ARGS = ["--ros-args", "--log-level", "info", "--log-level", "recording_node:=debug"]
 
 
 def generate_launch_description():
@@ -37,7 +38,7 @@ def generate_launch_description():
                         "description_config_dir": description_config_dir,
                     }
                 ],
-                arguments=WARN_LOG_ARGS,
+                arguments=RECORDER_DEBUG_LOG_ARGS,
             ),
             Node(
                 package="fr3_sonopet_pointcloud",
@@ -51,14 +52,14 @@ def generate_launch_description():
                         "pointcloud_config": pointcloud_config,
                     }
                 ],
-                arguments=WARN_LOG_ARGS,
+                arguments=INFO_LOG_ARGS,
             ),
             Node(
                 package="sonopet",
                 executable="sonopet_node",
                 name="sonopet_node",
                 output="screen",
-                arguments=WARN_LOG_ARGS,
+                arguments=INFO_LOG_ARGS,
             ),
         ]
     )

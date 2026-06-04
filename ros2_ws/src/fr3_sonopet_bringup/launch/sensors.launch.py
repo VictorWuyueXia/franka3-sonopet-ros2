@@ -6,7 +6,7 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
-WARN_LOG_ARGS = ["--ros-args", "--log-level", "warn"]
+INFO_LOG_ARGS = ["--ros-args", "--log-level", "info"]
 
 
 def _include_launch(filename: str) -> IncludeLaunchDescription:
@@ -46,7 +46,7 @@ def generate_launch_description():
                 package="rviz2",
                 executable="rviz2",
                 name="rviz2",
-                arguments=["-d", rviz_config, *WARN_LOG_ARGS],
+                arguments=["-d", rviz_config, *INFO_LOG_ARGS],
                 condition=IfCondition(LaunchConfiguration("rviz")),
                 output="screen",
             ),

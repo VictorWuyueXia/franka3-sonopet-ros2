@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import csv
 import shutil
 import wave
 from array import array
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import Event, Lock
+from queue import Queue
+from threading import Event, Lock, Thread
 from time import monotonic
+from typing import TextIO
 
 import cv2
 import rclpy
@@ -34,8 +37,9 @@ from fr3_sonopet_recording.recording_config import (
 )
 
 ARTIFACT_PATH_TOPIC = "/sonopet/artifact_path"
-SONOPET_READY_TOPIC = "/sonopet/ready"
 VIDEO_STREAM_MAX_AGE_S = 1.0
+CAPTURE_ACCEPT_TIMEOUT_S = 5.0
+CAPTURE_RESULT_TIMEOUT_S = 30.0
 
 
 @dataclass
@@ -59,7 +63,9 @@ class ActiveRecordingRun:
     started_at: float
     artifact_path: Path
     rgb_paths: dict[str, Path]
+    rgb_timestamp_paths: dict[str, Path]
     rgb_writers: dict[str, cv2.VideoWriter | None]
+    rgb_timestamp_files: dict[str, TextIO | None]
     rgb_counts: dict[str, int]
     audio_path: Path
     audio_wav: wave.Wave_write | None = None
@@ -70,9 +76,55 @@ class ActiveRecordingRun:
     audio_chunks_received: int = 0
     audio_chunks_gap_filled_source: int = 0
     audio_chunks_gap_filled_recorder: int = 0
+    audio_chunks_stale_dropped: int = 0
     audio_chunks_written: int = 0
     audio_samples_written: int = 0
     pointcloud_scans: list[PointCloudScan] = field(default_factory=list)
+    stopped_at: float | None = None
+
+
+@dataclass(frozen=True)
+class BoundaryCaptureTask:
+    """Serialized pointcloud capture request that must not block media recording."""
+
+    label: str
+    active_run: ActiveRecordingRun | None
+    publish_planning_cloud: bool
+    save_to_session: bool
+    artifact_root: Path | None
+
+
+@dataclass(frozen=True)
+class RgbFrameTask:
+    """Copied RGB frame that is safe to write outside the ROS callback."""
+
+    active_run: ActiveRecordingRun
+    camera_key: str
+    frame_bgr: object
+    stamp_sec: int
+    stamp_nanosec: int
+    received_at: float
+
+
+@dataclass(frozen=True)
+class AudioPacketTask:
+    """Copied audio packet that is safe to write outside the ROS callback."""
+
+    active_run: ActiveRecordingRun
+    samples: array
+    sample_rate_hz: int
+    channels: int
+    encoding: str
+    chunk_index: int
+    gap_fill: bool
+
+
+@dataclass(frozen=True)
+class CloseRunMediaTask:
+    """Run finalization request that drains all earlier media writes first."""
+
+    active_run: ActiveRecordingRun
+    done: Event
 
 
 def _camera_dir(artifact_path: Path, camera_key: str) -> Path:
@@ -112,12 +164,26 @@ class RecordingNode(Node):
         self._active_run: ActiveRecordingRun | None = None
         self._run_lock = Lock()
         self._boundary_lock = Lock()
-        self._sonopet_ready = False
+        self._capture_queue: Queue[BoundaryCaptureTask | None] = Queue()
+        self._media_queue: Queue[RgbFrameTask | AudioPacketTask | CloseRunMediaTask | None] = Queue()
+        self._capture_worker_stop = Event()
+        self._capture_worker = Thread(
+            target=self._run_boundary_capture_worker,
+            name="recording_boundary_capture",
+            daemon=True,
+        )
+        self._media_worker = Thread(
+            target=self._run_media_writer,
+            name="recording_media_writer",
+            daemon=True,
+        )
         self._last_rgb_received_s: dict[str, float | None] = {}
         self._run_id = experiment_run_id()
         self._artifact_path = self._config.artifact_root / self._run_id
         self._prepare_session_folder()
         self._runtime()
+        self._media_worker.start()
+        self._capture_worker.start()
         self.get_logger().info(
             f"Recording interface ready: run_id={self._run_id}, "
             f"artifact_path={self._artifact_path}"
@@ -150,7 +216,7 @@ class RecordingNode(Node):
             AudioChunk,
             self._config.audio_topic,
             self._write_audio_packet,
-            10,
+            128,
             callback_group=self._callback_group,
         )
         self._cutting_subscription = self.create_subscription(
@@ -158,13 +224,6 @@ class RecordingNode(Node):
             self._config.cutting_topic,
             self._on_cutting_flag,
             10,
-            callback_group=self._callback_group,
-        )
-        self._sonopet_ready_subscription = self.create_subscription(
-            Bool,
-            SONOPET_READY_TOPIC,
-            self._on_sonopet_ready,
-            artifact_qos,
             callback_group=self._callback_group,
         )
         self._record_server = ActionServer(
@@ -196,12 +255,7 @@ class RecordingNode(Node):
         # The startup cloud gives RViz and raster planning a visible surface before operator input.
         self.destroy_timer(self._startup_capture_timer)
         self._startup_capture_timer = None
-        try:
-            self._capture_pointcloud("pointcloud_start", True, False, None)
-        except Exception as exc:
-            self.get_logger().warning(
-                f"Startup planning cloud capture failed; recording remains available: {exc}"
-            )
+        self._queue_boundary_capture("pointcloud_start", None, True, False, None)
 
     def _prepare_session_folder(self) -> None:
         self._artifact_path.mkdir(parents=True, exist_ok=True)
@@ -247,23 +301,38 @@ class RecordingNode(Node):
         with self._boundary_lock:
             with self._run_lock:
                 recording_active = self._active_run is not None
-            if msg.data and not recording_active:
-                if not self._require_workflow_ready():
-                    return
-                self._start_recording_run()
-            if not msg.data and recording_active:
-                self._stop_recording_run()
-
-    def _on_sonopet_ready(self, msg: Bool) -> None:
-        self._sonopet_ready = bool(msg.data)
-
-    def _require_workflow_ready(self) -> bool:
-        if not self._sonopet_ready:
-            self._report_blocked_run(
-                f"SONOPET ERROR: Sonopet is not connected or not ready on {SONOPET_READY_TOPIC}; "
-                "not starting this cutting run."
+                active_label = self._active_run.label if self._active_run is not None else "none"
+            self.get_logger().info(
+                f"Cutting topic edge: value={bool(msg.data)}, "
+                f"recording_active={recording_active}, active_run={active_label}, "
+                f"publishers={self._cutting_publishers_label()}"
             )
-            return False
+            try:
+                if msg.data and not recording_active:
+                    if not self._require_recording_inputs():
+                        return
+                    self._start_recording_run()
+                if not msg.data and recording_active:
+                    self._stop_recording_run("cutting_false", True)
+                if msg.data and recording_active:
+                    self.get_logger().debug(
+                        f"Ignored cutting=True because {active_label} is already active."
+                    )
+                if not msg.data and not recording_active:
+                    self.get_logger().debug(
+                        "Ignored cutting=False because no recording run is active."
+                    )
+            except Exception as exc:
+                self.get_logger().error(
+                    f"RECORDING ERROR: cutting transition failed; recorder remains available: {exc}"
+                )
+
+    def _cutting_publishers_label(self) -> str:
+        publishers = self.get_publishers_info_by_topic(self._config.cutting_topic)
+        return ",".join(f"{info.node_namespace}/{info.node_name}" for info in publishers)
+
+    def _require_recording_inputs(self) -> bool:
+        # Fresh RGB confirms the media writers can be opened when raster motion begins.
         now = monotonic()
         stale = [
             camera.key
@@ -274,7 +343,8 @@ class RecordingNode(Node):
         if stale:
             self._report_blocked_run(
                 f"VIDEO ERROR: no fresh RGB frames from camera(s) {', '.join(stale)} within "
-                f"{VIDEO_STREAM_MAX_AGE_S:.1f}s; not starting this cutting run."
+                f"{VIDEO_STREAM_MAX_AGE_S:.1f}s; not starting this cutting run; "
+                "no fallback media will be created."
             )
             return False
         return True
@@ -289,38 +359,40 @@ class RecordingNode(Node):
             camera.key: _camera_dir(self._artifact_path, camera.key) / f"rgb_{run_index}.avi"
             for camera in self._config.cameras
         }
+        rgb_timestamp_paths = {
+            camera.key: _camera_dir(self._artifact_path, camera.key)
+            / f"rgb_timestamps_{run_index}.csv"
+            for camera in self._config.cameras
+        }
         active_run = ActiveRecordingRun(
             label=run_label,
             index=run_index,
             started_at=0.0,
             artifact_path=self._artifact_path,
             rgb_paths=rgb_paths,
+            rgb_timestamp_paths=rgb_timestamp_paths,
             rgb_writers={camera.key: None for camera in self._config.cameras},
+            rgb_timestamp_files={camera.key: None for camera in self._config.cameras},
             rgb_counts={camera.key: 0 for camera in self._config.cameras},
             audio_path=self._artifact_path / "audio" / f"audio_{run_index}.wav",
         )
-        try:
-            start_scans = self._capture_pointcloud(
-                "pointcloud_start",
-                False,
-                True,
-                None,
-                active_run.artifact_path,
-            )
-        except Exception as exc:
-            self.get_logger().error(
-                f"RECORDING ERROR: {run_label} was not recorded because "
-                f"pointcloud_start failed: {exc}"
-            )
-            raise
-        # Media recording opens only after the pointcloud start boundary is complete.
         active_run.started_at = wall_clock_timestamp()
-        active_run.pointcloud_scans.extend(start_scans)
         with self._run_lock:
             if self._active_run is not None:
-                raise RuntimeError("Recording run became active during pointcloud_start")
+                raise RuntimeError("Recording run became active during run start")
             self._active_run = active_run
             self._run_count += 1
+        self.get_logger().info(
+            f"Recording run {run_label} active: started_at={active_run.started_at:.6f}; "
+            "media writers will open on the next RGB/audio samples."
+        )
+        self._queue_boundary_capture(
+            "pointcloud_start",
+            active_run,
+            False,
+            True,
+            active_run.artifact_path,
+        )
 
     def _write_rgb_frame(self, camera_key: str, msg: Image) -> None:
         frame_bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
@@ -328,69 +400,139 @@ class RecordingNode(Node):
         with self._run_lock:
             if self._active_run is None:
                 return
-            writer = self._active_run.rgb_writers[camera_key]
-            if writer is None:
-                height, width = frame_bgr.shape[:2]
-                writer = cv2.VideoWriter(
-                    str(self._active_run.rgb_paths[camera_key]),
-                    cv2.VideoWriter_fourcc(*"MJPG"),
-                    self._config.video_fps,
-                    (width, height),
+            self._media_queue.put(
+                RgbFrameTask(
+                    active_run=self._active_run,
+                    camera_key=camera_key,
+                    frame_bgr=frame_bgr.copy(),
+                    stamp_sec=int(msg.header.stamp.sec),
+                    stamp_nanosec=int(msg.header.stamp.nanosec),
+                    received_at=wall_clock_timestamp(),
                 )
-                if not writer.isOpened():
-                    raise RuntimeError(
-                        f"Could not open RGB video writer: {self._active_run.rgb_paths[camera_key]}"
-                    )
-                self._active_run.rgb_writers[camera_key] = writer
-            writer.write(frame_bgr)
-            self._active_run.rgb_counts[camera_key] += 1
+            )
 
     def _write_audio_packet(self, msg: AudioChunk) -> None:
-        samples = array("h", (int(value) for value in msg.samples))
+        samples = array("h", msg.samples)
         channels = int(msg.channels)
         if channels <= 0 or not samples or len(samples) % channels != 0:
             raise ValueError("Audio chunk samples must be nonempty and channel-aligned")
         with self._run_lock:
             if self._active_run is None:
                 return
-            active_run = self._active_run
-            self._prepare_audio_stream(active_run, msg)
-            chunk_index = int(msg.chunk_index)
-            if active_run.audio_next_chunk_index is None:
-                active_run.audio_next_chunk_index = chunk_index
-            if chunk_index < active_run.audio_next_chunk_index:
-                raise ValueError(
-                    f"Audio chunk index moved backward: got {chunk_index}, "
-                    f"expected {active_run.audio_next_chunk_index}"
+            self._media_queue.put(
+                AudioPacketTask(
+                    active_run=self._active_run,
+                    samples=samples,
+                    sample_rate_hz=int(msg.sample_rate_hz),
+                    channels=channels,
+                    encoding=str(msg.encoding),
+                    chunk_index=int(msg.chunk_index),
+                    gap_fill=bool(msg.gap_fill),
                 )
-            missing_chunks = chunk_index - active_run.audio_next_chunk_index
-            if missing_chunks:
-                zero_samples = array("h", [0]) * len(samples)
-                for _ in range(missing_chunks):
-                    self._write_audio_samples(active_run, zero_samples)
-                active_run.audio_chunks_gap_filled_recorder += missing_chunks
-                self.get_logger().warning(
-                    f"Filled {missing_chunks} missing recorder audio chunks with silence"
-                )
-            if msg.gap_fill:
-                active_run.audio_chunks_gap_filled_source += 1
-            active_run.audio_chunks_received += 1
-            self._write_audio_samples(active_run, samples)
-            active_run.audio_next_chunk_index = chunk_index + 1
+            )
 
-    def _prepare_audio_stream(self, active_run: ActiveRecordingRun, msg: AudioChunk) -> None:
+    def _run_media_writer(self) -> None:
+        while True:
+            task = self._media_queue.get()
+            if task is None:
+                return
+            try:
+                if isinstance(task, RgbFrameTask):
+                    self._write_rgb_frame_task(task)
+                elif isinstance(task, AudioPacketTask):
+                    self._write_audio_packet_task(task)
+                else:
+                    self._close_run_files(task.active_run)
+            except Exception as exc:
+                self.get_logger().error(f"RECORDING ERROR: media writer failed: {exc}")
+            finally:
+                if isinstance(task, CloseRunMediaTask):
+                    task.done.set()
+
+    def _write_rgb_frame_task(self, task: RgbFrameTask) -> None:
+        active_run = task.active_run
+        writer = active_run.rgb_writers[task.camera_key]
+        if writer is None:
+            height, width = task.frame_bgr.shape[:2]
+            writer = cv2.VideoWriter(
+                str(active_run.rgb_paths[task.camera_key]),
+                cv2.VideoWriter_fourcc(*"MJPG"),
+                self._config.video_fps,
+                (width, height),
+            )
+            if not writer.isOpened():
+                raise RuntimeError(
+                    f"Could not open RGB video writer: {active_run.rgb_paths[task.camera_key]}"
+                )
+            timestamp_file = active_run.rgb_timestamp_paths[task.camera_key].open(
+                "w", newline="", encoding="utf-8"
+            )
+            csv.writer(timestamp_file).writerow(
+                ["frame_index", "stamp_sec", "stamp_nanosec", "received_at"]
+            )
+            active_run.rgb_writers[task.camera_key] = writer
+            active_run.rgb_timestamp_files[task.camera_key] = timestamp_file
+            self.get_logger().info(
+                f"Opened RGB writer for {task.camera_key}: "
+                f"path={active_run.rgb_paths[task.camera_key]}, size={width}x{height}, "
+                f"fps={self._config.video_fps:g}, "
+                f"timestamps={active_run.rgb_timestamp_paths[task.camera_key]}"
+            )
+        frame_index = active_run.rgb_counts[task.camera_key]
+        writer.write(task.frame_bgr)
+        timestamp_file = active_run.rgb_timestamp_files[task.camera_key]
+        if timestamp_file is None:
+            raise RuntimeError(f"RGB timestamp file is not open: {task.camera_key}")
+        csv.writer(timestamp_file).writerow(
+            [frame_index, task.stamp_sec, task.stamp_nanosec, f"{task.received_at:.6f}"]
+        )
+        active_run.rgb_counts[task.camera_key] += 1
+
+    def _write_audio_packet_task(self, task: AudioPacketTask) -> None:
+        active_run = task.active_run
+        self._prepare_audio_stream(active_run, task)
+        if active_run.audio_next_chunk_index is None:
+            active_run.audio_next_chunk_index = task.chunk_index
+        if task.chunk_index < active_run.audio_next_chunk_index:
+            active_run.audio_chunks_stale_dropped += 1
+            self.get_logger().error(
+                f"RECORDING ERROR: dropped stale audio chunk for {active_run.label}: "
+                f"got={task.chunk_index}, expected={active_run.audio_next_chunk_index}"
+            )
+            return
+        missing_chunks = task.chunk_index - active_run.audio_next_chunk_index
+        if missing_chunks:
+            self._write_audio_silence(active_run, len(task.samples), missing_chunks)
+            active_run.audio_chunks_gap_filled_recorder += missing_chunks
+            self.get_logger().warning(
+                f"Filled {missing_chunks} missing recorder audio chunks with silence"
+            )
+        if task.gap_fill:
+            active_run.audio_chunks_gap_filled_source += 1
+        active_run.audio_chunks_received += 1
+        self._write_audio_samples(active_run, task.samples)
+        active_run.audio_next_chunk_index = task.chunk_index + 1
+
+    def _prepare_audio_stream(
+        self, active_run: ActiveRecordingRun, task: AudioPacketTask
+    ) -> None:
         if active_run.audio_wav is None:
-            active_run.audio_sample_rate_hz = int(msg.sample_rate_hz)
-            active_run.audio_channels = int(msg.channels)
-            active_run.audio_encoding = str(msg.encoding)
+            active_run.audio_sample_rate_hz = task.sample_rate_hz
+            active_run.audio_channels = task.channels
+            active_run.audio_encoding = task.encoding
             active_run.audio_wav = wave.open(str(active_run.audio_path), "wb")
             active_run.audio_wav.setnchannels(active_run.audio_channels)
             active_run.audio_wav.setsampwidth(2)
             active_run.audio_wav.setframerate(active_run.audio_sample_rate_hz)
+            self.get_logger().info(
+                f"Opened audio writer: path={active_run.audio_path}, "
+                f"sample_rate_hz={active_run.audio_sample_rate_hz}, "
+                f"channels={active_run.audio_channels}, encoding={active_run.audio_encoding}"
+            )
         elif (
-            active_run.audio_sample_rate_hz != int(msg.sample_rate_hz)
-            or active_run.audio_channels != int(msg.channels)
-            or active_run.audio_encoding != str(msg.encoding)
+            active_run.audio_sample_rate_hz != task.sample_rate_hz
+            or active_run.audio_channels != task.channels
+            or active_run.audio_encoding != task.encoding
         ):
             raise ValueError("Audio format changed during recording")
 
@@ -399,42 +541,64 @@ class RecordingNode(Node):
         active_run.audio_chunks_written += 1
         active_run.audio_samples_written += len(samples)
 
-    def _stop_recording_run(self) -> None:
+    def _write_audio_silence(
+        self, active_run: ActiveRecordingRun, samples_per_chunk: int, chunk_count: int
+    ) -> None:
+        active_run.audio_wav.writeframes(b"\x00\x00" * samples_per_chunk * chunk_count)
+        active_run.audio_chunks_written += chunk_count
+        active_run.audio_samples_written += samples_per_chunk * chunk_count
+
+    def _stop_recording_run(self, stop_origin: str, queue_stop_capture: bool) -> None:
         stopped_at = wall_clock_timestamp()
         with self._run_lock:
             active_run = self._active_run
             self._active_run = None
         if active_run is None:
             return
-        self._close_run_files(active_run)
-        boundary_error: Exception | None = None
-        try:
-            active_run.pointcloud_scans.extend(
-                self._capture_pointcloud(
-                    "pointcloud_stop",
-                    False,
-                    True,
-                    None,
-                    active_run.artifact_path,
-                )
+        self.get_logger().info(
+            f"Recording run {active_run.label} stopping: origin={stop_origin}, "
+            f"stopped_at={stopped_at:.6f}, rgb_frames={active_run.rgb_counts}, "
+            f"audio_chunks={active_run.audio_chunks_written}"
+        )
+        self._flush_run_media(active_run)
+        with self._run_lock:
+            active_run.stopped_at = stopped_at
+            self._write_run_metadata(active_run, stopped_at)
+        if queue_stop_capture:
+            self._queue_boundary_capture(
+                "pointcloud_stop",
+                active_run,
+                False,
+                True,
+                active_run.artifact_path,
             )
-        except Exception as exc:
-            boundary_error = exc
-            self.get_logger().error(
-                f"RECORDING ERROR: {active_run.label} is incomplete because "
-                f"pointcloud_stop failed after recording stopped: {exc}"
+        else:
+            self.get_logger().warning(
+                f"Recording run {active_run.label} stopped during shutdown; "
+                "stop pointcloud capture was not queued."
             )
-        self._write_run_metadata(active_run, stopped_at)
-        if boundary_error is not None:
-            raise boundary_error
+
+    def _flush_run_media(self, active_run: ActiveRecordingRun) -> None:
+        done = Event()
+        self._media_queue.put(CloseRunMediaTask(active_run, done))
+        done.wait()
 
     def _close_run_files(self, active_run: ActiveRecordingRun) -> None:
         """Finalize C-backed media handles before metadata exposes the artifact paths."""
+        released_rgb = 0
         for writer in active_run.rgb_writers.values():
             if writer is not None:
                 writer.release()
+                released_rgb += 1
+        for timestamp_file in active_run.rgb_timestamp_files.values():
+            if timestamp_file is not None:
+                timestamp_file.close()
         if active_run.audio_wav is not None:
             active_run.audio_wav.close()
+        self.get_logger().info(
+            f"Closed media handles for {active_run.label}: "
+            f"rgb_writers={released_rgb}, audio_opened={active_run.audio_wav is not None}"
+        )
 
     def _write_run_metadata(self, active_run: ActiveRecordingRun, stopped_at: float) -> None:
         run_root = active_run.artifact_path
@@ -450,6 +614,7 @@ class RecordingNode(Node):
             "chunks_received": active_run.audio_chunks_received,
             "chunks_gap_filled_source": active_run.audio_chunks_gap_filled_source,
             "chunks_gap_filled_recorder": active_run.audio_chunks_gap_filled_recorder,
+            "chunks_stale_dropped": active_run.audio_chunks_stale_dropped,
             "chunks_written": active_run.audio_chunks_written,
             "samples_written": active_run.audio_samples_written,
             "duration_s": (
@@ -469,6 +634,9 @@ class RecordingNode(Node):
             "rgb_video": {
                 camera.key: {
                     "video": _relative_artifact_path(run_root, active_run.rgb_paths[camera.key]),
+                    "timestamps": _relative_artifact_path(
+                        run_root, active_run.rgb_timestamp_paths[camera.key]
+                    ),
                     "frame_rate": self._config.video_fps,
                     "frames": active_run.rgb_counts[camera.key],
                 }
@@ -492,17 +660,86 @@ class RecordingNode(Node):
         }
         write_json(manifest_path, manifest)
         write_json(audio_meta_path, audio_meta)
+        self.get_logger().info(
+            f"Wrote recording metadata for {active_run.label}: "
+            f"manifest={manifest_path}, audio_meta={audio_meta_path}, "
+            f"pointcloud_scans={len(active_run.pointcloud_scans)}"
+        )
+
+    def _queue_boundary_capture(
+        self,
+        label: str,
+        active_run: ActiveRecordingRun | None,
+        publish_planning_cloud: bool,
+        save_to_session: bool,
+        artifact_root: Path | None,
+    ) -> None:
+        task = BoundaryCaptureTask(
+            label=label,
+            active_run=active_run,
+            publish_planning_cloud=publish_planning_cloud,
+            save_to_session=save_to_session,
+            artifact_root=artifact_root,
+        )
+        self._capture_queue.put(task)
+        run_label = active_run.label if active_run is not None else "session"
+        self.get_logger().info(
+            f"Queued boundary capture: label={label}, run={run_label}, "
+            f"save_artifacts={save_to_session}, queue_depth={self._capture_queue.qsize()}"
+        )
+
+    def _run_boundary_capture_worker(self) -> None:
+        while True:
+            task = self._capture_queue.get()
+            if task is None:
+                return
+            run_label = task.active_run.label if task.active_run is not None else "session"
+            if self._capture_worker_stop.is_set():
+                self.get_logger().warning(
+                    f"Skipped boundary capture during shutdown: label={task.label}, run={run_label}"
+                )
+                continue
+            try:
+                self.get_logger().info(
+                    f"Boundary capture started: label={task.label}, run={run_label}"
+                )
+                scans = self._capture_pointcloud(
+                    task.label,
+                    task.publish_planning_cloud,
+                    task.save_to_session,
+                    task.artifact_root,
+                )
+            except Exception as exc:
+                self.get_logger().error(
+                    f"RECORDING ERROR: boundary capture failed: "
+                    f"label={task.label}, run={run_label}, error={exc}"
+                )
+                continue
+            if task.active_run is None:
+                self.get_logger().info(
+                    f"Boundary capture completed for session: label={task.label}, scans={len(scans)}"
+                )
+                continue
+            with self._run_lock:
+                task.active_run.pointcloud_scans.extend(scans)
+                stopped_at = task.active_run.stopped_at
+                if stopped_at is not None:
+                    self._write_run_metadata(task.active_run, stopped_at)
+            self.get_logger().info(
+                f"Boundary capture completed: label={task.label}, run={run_label}, "
+                f"scans={len(scans)}, stopped={stopped_at is not None}"
+            )
 
     def _capture_pointcloud(
         self,
         label: str,
         publish_planning_cloud: bool,
         save_to_session: bool,
-        _goal_handle,
         artifact_root: Path | None = None,
     ) -> list[PointCloudScan]:
         # Recording delegates all pointcloud work to the dedicated pointcloud action server.
-        self._capture_client.wait_for_server()
+        if not self._capture_client.wait_for_server(timeout_sec=CAPTURE_ACCEPT_TIMEOUT_S):
+            raise TimeoutError("Timed out waiting for pointcloud capture server")
         goal = CapturePointCloud.Goal()
         goal.label = label
         goal.publish_planning_cloud = bool(publish_planning_cloud)
@@ -510,13 +747,26 @@ class RecordingNode(Node):
         goal.artifact_root = str(
             artifact_root if artifact_root is not None else self._artifact_path
         )
-        goal_handle = wait_future(self._capture_client.send_goal_async(goal))
+        self.get_logger().info(
+            f"Sending pointcloud capture goal: label={label}, "
+            f"save_artifacts={save_to_session}, artifact_root={goal.artifact_root}"
+        )
+        goal_handle = wait_future(
+            self._capture_client.send_goal_async(goal),
+            CAPTURE_ACCEPT_TIMEOUT_S,
+            f"Timed out waiting for pointcloud capture acceptance: {label}",
+        )
         if not goal_handle.accepted:
             raise RuntimeError("Pointcloud capture goal was rejected")
-        action_result = wait_future(goal_handle.get_result_async()).result
+        self.get_logger().info(f"Pointcloud capture accepted: label={label}; waiting for result.")
+        action_result = wait_future(
+            goal_handle.get_result_async(),
+            CAPTURE_RESULT_TIMEOUT_S,
+            f"Timed out waiting for pointcloud capture result: {label}",
+        ).result
         if not action_result.success:
             raise RuntimeError(action_result.message)
-        return [
+        scans = [
             PointCloudScan(
                 label=label,
                 camera_key=camera_key,
@@ -535,6 +785,11 @@ class RecordingNode(Node):
             )
             if artifact_path
         ]
+        self.get_logger().info(
+            f"Pointcloud capture result: label={label}, success={action_result.success}, "
+            f"scans={len(scans)}, message={action_result.message}"
+        )
+        return scans
 
     def _discard_experiment_folder(self) -> None:
         if self._artifact_path.exists():
@@ -545,22 +800,26 @@ class RecordingNode(Node):
             self.destroy_subscription(subscription)
         self.destroy_subscription(self._audio_subscription)
         self.destroy_subscription(self._cutting_subscription)
-        self.destroy_subscription(self._sonopet_ready_subscription)
         if self._startup_capture_timer is not None:
             self.destroy_timer(self._startup_capture_timer)
             self._startup_capture_timer = None
         with self._boundary_lock:
             if self._active_run is not None:
-                self._stop_recording_run()
+                self._stop_recording_run("shutdown_active_run", False)
+        self._media_queue.put(None)
+        self._media_worker.join(timeout=5.0)
+        self._capture_worker_stop.set()
+        self._capture_queue.put(None)
         if not self._save_artifacts_enabled:
             self._discard_experiment_folder()
         return super().destroy_node()
 
 
-def wait_future(future):
+def wait_future(future, timeout_s: float | None = None, timeout_message: str = "Future timed out"):
     event = Event()
     future.add_done_callback(lambda _future: event.set())
-    event.wait()
+    if not event.wait(timeout_s):
+        raise TimeoutError(timeout_message)
     return future.result()
 
 

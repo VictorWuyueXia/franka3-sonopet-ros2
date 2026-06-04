@@ -129,8 +129,8 @@ def test_launch_files_use_sensor_only_recording_defaults():
     pointcloud_arg = 'launch_arguments={"pointcloud_enable": LaunchConfiguration("rviz")}'
     assert pointcloud_arg in experiment_launch
     assert "parameters=[raster_config]" in experiment_launch
-    assert '"--ros-args", "--log-level", "warn"' in experiment_launch
-    assert 'arguments=["-d", rviz_config, *WARN_LOG_ARGS]' in experiment_launch
+    assert '"--ros-args", "--log-level", "info"' in experiment_launch
+    assert 'arguments=["-d", rviz_config, *INFO_LOG_ARGS]' in experiment_launch
     assert 'executable="shutdown_manager_node"' in experiment_launch
     assert "shutdown_manager_node = fr3_sonopet_bringup.shutdown_manager:main" in setup_py
     assert "<exec_depend>fr3_sonopet_interfaces</exec_depend>" in package_xml
@@ -168,8 +168,10 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "fr3_sonopet_description" in recording_launch
     assert "/sonopet/pointcloud/status_marker" not in rviz
     assert "microphone.yaml" in microphone_launch
-    assert '"--ros-args", "--log-level", "warn"' in microphone_launch
-    assert '"--ros-args", "--log-level", "warn"' in recording_launch
+    assert '"--ros-args", "--log-level", "info"' in microphone_launch
+    assert '"recording_node:=debug"' in recording_launch
+    assert "arguments=RECORDER_DEBUG_LOG_ARGS" in recording_launch
+    assert '"--ros-args", "--log-level", "info"' in recording_launch
     assert "SHUTDOWN_SERVICE = \"/sonopet/shutdown\"" in shutdown_manager
     assert "STOP_MOTION_ACTION = \"/fr3/stop_motion\"" in shutdown_manager
     assert "StopMotion" in shutdown_manager

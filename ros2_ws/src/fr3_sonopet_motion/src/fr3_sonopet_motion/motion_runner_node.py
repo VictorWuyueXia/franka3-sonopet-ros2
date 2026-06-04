@@ -631,7 +631,16 @@ class MotionRunnerNode(Node):
                     feedback = ExecuteMotion.Feedback()
                     feedback.active_segment = segment_name
                     goal_handle.publish_feedback(feedback)
+                    segment_duration = trajectory.points[-1].time_from_start
+                    segment_duration_s = (
+                        float(segment_duration.sec) + float(segment_duration.nanosec) * 1e-9
+                    )
+                    self.get_logger().info(
+                        f"Executing segment {segment_name}: "
+                        f"points={len(trajectory.points)}, duration_s={segment_duration_s:.3f}"
+                    )
                     if segment_name == "raster":
+                        self.get_logger().info("Raster segment starting; publishing cutting=True.")
                         self._publish_cutting(True)
                         cutting_active = True
                     while True:
@@ -657,10 +666,12 @@ class MotionRunnerNode(Node):
                         if not self._controller_failure_matches_joint_state_loss(observed_count):
                             raise RuntimeError(MOTION_VENDOR_ERROR)
                     if segment_name == "raster":
+                        self.get_logger().info("Raster segment complete; publishing cutting=False.")
                         self._publish_cutting(False)
                         cutting_active = False
             finally:
                 if cutting_active:
+                    self.get_logger().info("Execution cleanup publishing cutting=False.")
                     self._publish_cutting(False)
                 if not self._stop_requested.is_set():
                     self._motion_state_pub.publish(Bool(data=False))
@@ -683,6 +694,7 @@ class MotionRunnerNode(Node):
 
     def _publish_cutting(self, enabled: bool) -> None:
         self._cutting_pub.publish(Bool(data=enabled))
+        self.get_logger().info(f"Published {CUTTING_TOPIC}={enabled}.")
 
     def _send_controller_trajectory(self, trajectory: JointTrajectory) -> int:
         controller_goal = FollowJointTrajectory.Goal()

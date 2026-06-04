@@ -1,0 +1,2 @@
+source scripts/source_ubuntu24_ros_jazzy.sh
+ros2 launch fr3_sonopet_bringup experiment.launch.py rviz:=true

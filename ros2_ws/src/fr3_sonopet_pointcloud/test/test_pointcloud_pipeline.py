@@ -138,6 +138,9 @@ def test_node_source_rejects_stale_vendor_state_and_owns_capture_action():
     assert "VENDOR_LIVE_MAX_AGE_S = 0.5" in node
     assert 'STALE_MESSAGE = "Cannot capture pointcloud: cannot get joint state"' in node
     assert "goal_handle.abort()" in node
+    assert "failures: list[str] = []" in node
+    assert "Failed cameras:" in node
+    assert "POINTCLOUD ERROR: camera capture failed" in node
     assert "ActionServer(" in node
     assert "string artifact_root" in action
     assert "float64[] timestamps" in action

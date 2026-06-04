@@ -1,6 +1,6 @@
 motion:
   idle_joint_positions: [0.0, -0.78539816339, 0.0, -2.35619449019, 0.0, 1.57079632679, 0.0]
   motion_speed_m_s: 0.03
-  raster_speed_m_s: 0.005 
+  raster_speed_m_s: 0.001 
   #raster_speed_m_s: 0.003 #3mm/s
   parking_lift_m: 0.02
