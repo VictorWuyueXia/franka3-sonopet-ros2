@@ -1,7 +1,7 @@
 run,cloud,n_clean,n_invalid,n_zgate,n_sor,z_med_m
-run_1,in_hand_start,85670,0,238544,1418,0.1055
-run_1,in_hand_stop,73390,0,249567,2675,0.1055
-run_2,in_hand_start,89419,0,233687,2526,0.1052
-run_2,in_hand_stop,85043,0,238075,2514,0.1052
-run_3,in_hand_start,90081,0,233224,2274,0.1052
-run_3,in_hand_stop,116626,0,204435,4505,0.1044
+run_1,in_hand_start,270536,0,44427,10669,0.0935
+run_1,in_hand_stop,272308,0,42261,11063,0.0932
+run_2,in_hand_start,271684,0,44069,9879,0.0935
+run_2,in_hand_stop,275128,0,40979,9525,0.0937
+run_3,in_hand_start,271520,0,44429,9630,0.0937
+run_3,in_hand_stop,271672,0,41803,12091,0.0967
