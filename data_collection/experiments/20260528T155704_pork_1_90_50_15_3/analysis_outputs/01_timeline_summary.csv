@@ -1,0 +1,4 @@
+run,start_rel_s,stop_rel_s,run_window_s,audio_duration_s,audio_vs_window_gap_s,fixed_frames,in_hand_frames,in_hand_pc_start_off_s,in_hand_pc_stop_off_s
+run_1,0.0,196.11,196.11,134.08,62.03,4332,4331,0.15,0.21
+run_2,312.09,513.81,201.72,135.55,66.16,4340,4344,0.22,1.31
+run_3,592.03,796.83,204.8,141.89,62.91,4621,4623,0.09,0.2

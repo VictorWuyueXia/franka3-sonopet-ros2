@@ -1,0 +1,4 @@
+run,freq_mean_Hz,freq_std_Hz,freq_min_Hz,freq_max_Hz,freq_range_Hz,within_run_slope_Hz_per_s,within_run_drift_Hz
+run_1,25357.288,1333.658,0.0,25626.73,25626.73,0.8735,348.43
+run_2,25343.937,1373.106,0.0,25613.535,25613.535,0.9031,359.66
+run_3,25280.015,1353.757,0.0,25613.23,25613.23,0.6908,276.98

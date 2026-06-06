@@ -1,0 +1,4 @@
+run,n_samples,rate_hz,power_W_mean,power_W_std,mech_R_ohm_mean,mech_R_ohm_std,freq_Hz_mean,freq_Hz_std,freq_within_run_drift_Hz,footpedal_pct_mean
+run_1,40534,200.0,28.19,2.69,3206.9,348.7,25330.18,1909.395,814.46,4.96
+run_2,39993,199.8,28.11,2.71,3197.0,312.5,25323.823,1892.126,783.85,4.26
+run_3,40060,200.0,27.94,2.59,3177.7,294.5,25329.11,1882.323,778.65,3.98

@@ -1,0 +1,11 @@
+cloud,z_median_m,z_sign,surface_normal_z,x_med_m,y_med_m
+rescan_1779998232,0.157,positive(away),0.997,0.0111,-0.0012
+run_1_start,0.163,positive(away),0.991,0.013,-0.0004
+run_1_stop,0.162,positive(away),0.989,0.0126,-0.0008
+rescan_1779998566,0.155,positive(away),0.997,0.0107,-0.0017
+rescan_1779998576,0.155,positive(away),0.997,0.0116,-0.001
+run_2_start,0.16,positive(away),0.99,0.0133,-0.0006
+run_2_stop,0.168,positive(away),0.989,0.0128,-0.0006
+rescan_1779998857,0.152,positive(away),0.996,0.0107,-0.0015
+run_3_start,0.161,positive(away),0.988,0.0138,-0.0003
+run_3_stop,0.156,positive(away),0.987,0.0116,-0.0011

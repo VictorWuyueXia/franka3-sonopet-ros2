@@ -1,0 +1,4 @@
+run,sr_hz,duration_s,rms_mean,rms_std,peak_abs,clip_fraction,centroid_hz_mean,bandwidth_hz_mean,dominant_freq_hz
+run_1,48000,87.42,0.0843,0.02975,0.6704,0.0,11460.4,4756.9,12738.0
+run_2,48000,61.4,0.09122,0.03732,0.6602,0.0,11533.0,4780.2,12715.5
+run_3,48000,86.44,0.08592,0.02838,0.7463,0.0,11556.2,4871.5,12715.6

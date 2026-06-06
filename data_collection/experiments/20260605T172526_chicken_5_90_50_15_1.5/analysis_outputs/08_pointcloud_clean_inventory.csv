@@ -1,0 +1,7 @@
+run,cloud,n_clean,n_invalid,n_zgate,n_sor,z_med_m
+run_1,in_hand_start,85670,0,238544,1418,0.1055
+run_1,in_hand_stop,73390,0,249567,2675,0.1055
+run_2,in_hand_start,89419,0,233687,2526,0.1052
+run_2,in_hand_stop,85043,0,238075,2514,0.1052
+run_3,in_hand_start,90081,0,233224,2274,0.1052
+run_3,in_hand_stop,116626,0,204435,4505,0.1044

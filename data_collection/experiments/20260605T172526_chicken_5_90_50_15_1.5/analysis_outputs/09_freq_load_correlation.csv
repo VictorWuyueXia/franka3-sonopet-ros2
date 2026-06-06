@@ -1,0 +1,13 @@
+run,load,pearson_r,p_value
+run_1,MechResistance_Ohm,0.744,0.00e+00
+run_1,Power_W,0.743,0.00e+00
+run_1,I_Handpiece_mag_A,0.858,0.00e+00
+run_1,Z_Handpiece_mag_Ohm,0.954,0.00e+00
+run_2,MechResistance_Ohm,0.843,0.00e+00
+run_2,Power_W,0.84,0.00e+00
+run_2,I_Handpiece_mag_A,0.925,0.00e+00
+run_2,Z_Handpiece_mag_Ohm,0.974,0.00e+00
+run_3,MechResistance_Ohm,0.62,0.00e+00
+run_3,Power_W,0.771,0.00e+00
+run_3,I_Handpiece_mag_A,0.88,0.00e+00
+run_3,Z_Handpiece_mag_Ohm,0.956,0.00e+00

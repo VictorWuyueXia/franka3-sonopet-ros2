@@ -1,0 +1,4 @@
+run,window_s,audio_dur_s,audio_minus_window_s,audio_onset_s,audio_offset_s,silent_frac,video_frames,fps_for_audiomatch,fps_for_windowmatch
+run_1,196.1,134.1,-62.0,0.0,133.97,0.0,4332,32.31,22.09
+run_2,201.7,135.6,-66.2,0.0,135.45,0.0,4340,32.02,21.52
+run_3,204.8,141.9,-62.9,0.0,141.78,0.0,4621,32.57,22.56

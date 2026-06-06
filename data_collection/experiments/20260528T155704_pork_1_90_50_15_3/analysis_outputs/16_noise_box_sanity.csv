@@ -1,0 +1,6 @@
+cloud,n_cells,dz_med_mm,dz_mean_mm,dz_madsig_mm
+run_1_stop,349,0.027,0.096,0.08
+run_2_start,349,-0.292,-0.131,0.324
+run_2_stop,349,-0.196,-0.394,0.165
+run_3_start,349,0.081,-0.028,0.659
+run_3_stop,349,-0.204,-0.084,0.486

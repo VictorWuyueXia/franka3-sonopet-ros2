@@ -1,0 +1,4 @@
+layer,cloud,incremental_pos_only_mm3,incremental_net_mm3,cumulative_pos_only_mm3,cumulative_net_mm3
+Layer 1,run_1_stop,518.9,-401.4,518.9,-401.4
+Layer 2,run_2_stop,297.7,1066.1,816.6,664.7
+Layer 3,run_3_stop,987.9,1109.7,1804.5,1774.4

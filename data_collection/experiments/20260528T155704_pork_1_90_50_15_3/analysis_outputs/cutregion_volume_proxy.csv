@@ -1,0 +1,6 @@
+cloud,t_rel_s,roi_mean_dz_mm,vol_net_mm3,vol_pos_only_mm3,vol_noise_1sig_mm3
+run_1_stop,196.2,-0.836,-401.4,518.9,17.2
+run_2_start,312.2,1.468,704.9,742.4,16.5
+run_2_stop,515.0,1.384,664.7,816.6,17.1
+run_3_start,592.0,2.858,1373.0,1406.0,16.5
+run_3_stop,796.9,3.694,1774.4,1804.5,16.6

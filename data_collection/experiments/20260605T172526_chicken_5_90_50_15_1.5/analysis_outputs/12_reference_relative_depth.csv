@@ -1,0 +1,6 @@
+cloud,t_rel_s,icp_fitness,icp_inlier_rmse_mm,diff_median_mm,diff_p95_mm,frac_receded_gt1mm
+run_1_stop,399.0,0.962,0.856,-0.179,1.589,0.076
+run_2_start,1115.3,0.989,1.099,0.136,1.256,0.118
+run_2_stop,1513.6,0.954,1.538,-0.195,3.059,0.142
+run_3_start,2346.8,0.989,1.11,-0.232,1.441,0.073
+run_3_stop,2747.3,0.748,1.691,-0.703,3.197,0.201

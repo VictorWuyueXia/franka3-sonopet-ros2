@@ -1,0 +1,2 @@
+status,reason,cut_roi_center_x_mm,cut_roi_center_y_mm,cut_roi_half_width_mm
+skipped,Raster point clouds are in fr3_link0 coordinates; the manually recorded raster_patch.json ROI is authoritative.,525.106,104.084,10.0

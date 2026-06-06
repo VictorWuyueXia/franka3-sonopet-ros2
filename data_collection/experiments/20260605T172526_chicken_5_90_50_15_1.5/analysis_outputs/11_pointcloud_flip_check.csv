@@ -1,0 +1,7 @@
+cloud,z_median_m,z_sign,surface_normal_z,x_med_m,y_med_m
+run_1_start,0.0958,positive(away),1.0,0.5269,0.1368
+run_1_stop,0.0938,positive(away),0.999,0.5268,0.156
+run_2_start,0.0957,positive(away),1.0,0.527,0.1366
+run_2_stop,0.0951,positive(away),0.999,0.5265,0.1556
+run_3_start,0.0958,positive(away),1.0,0.5268,0.1368
+run_3_stop,0.1,positive(away),1.0,0.5266,0.1558
