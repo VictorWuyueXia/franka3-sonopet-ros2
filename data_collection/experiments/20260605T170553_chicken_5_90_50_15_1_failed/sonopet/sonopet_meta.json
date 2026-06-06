@@ -1,0 +1,21 @@
+{
+  "footpedal": {
+    "baud": 115200,
+    "port": "/dev/ttyACM0"
+  },
+  "intervals": [
+    {
+      "path": "sonopet/SonopetCase_2026_06_05_T_17_07_24_4206429487.json",
+      "sample_count": 80522,
+      "started_at": 1780693644.2063975,
+      "started_at_local": "202606051707",
+      "stopped_at": 1780694046.8132324,
+      "stopped_at_local": "202606051714"
+    }
+  ],
+  "sample_rate_hz": 200,
+  "settings": {
+    "irrigation": "not_exposed_by_sonopet_live_data",
+    "suction_power": "not_exposed_by_sonopet_live_data"
+  }
+}

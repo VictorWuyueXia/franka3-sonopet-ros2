@@ -1,0 +1,37 @@
+{
+  "footpedal": {
+    "baud": 115200,
+    "port": "/dev/ttyACM0"
+  },
+  "intervals": [
+    {
+      "path": "sonopet/SonopetCase_2026_06_04_T_16_42_32_2925967508.json",
+      "sample_count": 24810,
+      "started_at": 1780605752.925704,
+      "started_at_local": "202606041642",
+      "stopped_at": 1780605876.9767823,
+      "stopped_at_local": "202606041644"
+    },
+    {
+      "path": "sonopet/SonopetCase_2026_06_04_T_16_46_02_2566865535.json",
+      "sample_count": 25072,
+      "started_at": 1780605962.5668366,
+      "started_at_local": "202606041646",
+      "stopped_at": 1780606087.9271457,
+      "stopped_at_local": "202606041648"
+    },
+    {
+      "path": "sonopet/SonopetCase_2026_06_04_T_16_49_37_7317407064.json",
+      "sample_count": 25303,
+      "started_at": 1780606177.3173685,
+      "started_at_local": "202606041649",
+      "stopped_at": 1780606303.8290415,
+      "stopped_at_local": "202606041651"
+    }
+  ],
+  "sample_rate_hz": 200,
+  "settings": {
+    "irrigation": "not_exposed_by_sonopet_live_data",
+    "suction_power": "not_exposed_by_sonopet_live_data"
+  }
+}
