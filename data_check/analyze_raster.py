@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Consolidated analysis of the robotic ultrasonic-aspirator tissue-resection dataset
-20260528T155704_pork_1_90_50_15_3 (pork, 3 runs, single setting 90/50/15, 3 mm/s).
+20260605T172526_chicken_5_90_50_15_1.5 with manual raster-patch cut ROI.
 
 This single script is the full, self-contained analysis pipeline (inventory -> sync ->
 audio -> point clouds / cut-region depth -> frequency -> figures).
@@ -62,17 +62,38 @@ warnings.filterwarnings("ignore")
 # SECTION 0 - CONFIG / PATHS / LOADERS
 # ============================================================
 # >>> SET THIS to the dataset folder you want to analyze <<<
-ROOT = "/media/btllab/B2EEF271EEF22CEB/Ubuntu/franka3-sonopet-ros2/data_collection/experiments/20260528T155704_pork_1_90_50_15_3"
+ROOT = "/media/btllab/B2EEF271EEF22CEB/Ubuntu/franka3-sonopet-ros2/data_collection/experiments/20260605T172526_chicken_5_90_50_15_1.5"
 OUT  = os.path.join(ROOT, "analysis_outputs")
 FIG  = os.path.join(OUT, "figures")
 os.makedirs(FIG, exist_ok=True)
 plt.rcParams.update({"figure.dpi": 200, "savefig.dpi": 300, "font.size": 9})
 
-# Trial -> (label, file suffix, manifest). File suffixes match recorder run indices.
-TRIALS = [("run_1", "_0", "manifest_0.json"),
-          ("run_2", "_1", "manifest_1.json"),
-          ("run_3", "_2", "manifest_2.json")]
-MAN = {r: json.load(open(os.path.join(ROOT, m))) for r, _, m in TRIALS}
+def load_manifest(name):
+    with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
+        return json.load(fh)
+
+def file_suffix_from_manifest_name(name):
+    """Use renamed consecutive file indices from manifest_0, manifest_1, manifest_2."""
+    return "_" + name.removeprefix("manifest_").removesuffix(".json")
+
+def audio_path(run):
+    """Resolve renamed audio files by manifest index before stale recorder paths."""
+    manifest_idx = MANIFEST_BY_RUN[run].removeprefix("manifest_").removesuffix(".json")
+    renamed = os.path.join(ROOT, "audio", f"audio_{manifest_idx}.wav")
+    if os.path.exists(renamed):
+        return renamed
+    path = os.path.join(ROOT, MAN[run]["audio"]["wav"])
+    if os.path.exists(path):
+        return path
+    raise FileNotFoundError(path)
+
+# Trial -> (analysis label, file suffix, manifest). Suffixes come from manifest file paths.
+TRIAL_MANIFESTS = [("run_1", "manifest_0.json"),
+                   ("run_2", "manifest_1.json"),
+                   ("run_3", "manifest_2.json")]
+MAN = {r: load_manifest(m) for r, m in TRIAL_MANIFESTS}
+MANIFEST_BY_RUN = {r: m for r, m in TRIAL_MANIFESTS}
+TRIALS = [(r, file_suffix_from_manifest_name(m), m) for r, m in TRIAL_MANIFESTS]
 
 # Camera fps = 30.
 EFFECTIVE_FPS = 30.0
@@ -106,26 +127,30 @@ COLORS = {
 # significance threshold = 2*sigma. (x_min, x_max, y_min, y_max) in mm.
 NOISE_BOX_MM = (50.0, 90.0, 20.0, 40.0)
 
-# CUT REGION ROI: a square box defined by its CENTER (x,y) and HALF-WIDTH, in mm.
-# Future waypoint-driven use: set CUT_ROI_CENTER_MM directly from the planned
-# resection waypoint XY (and CUT_ROI_HALF_MM to the desired box half-size). No
-# data-driven localization is performed.
-# Current value = the "-4 mm left-shifted" 22 mm box from the zoom figure: the
-# previous red-core center (-5,-31) shifted 4 mm left to exclude the blue
-# approached/standoff-dipole lobe on the right edge -> center (-9, -31) mm.
-CUT_ROI_CENTER_MM = (-9.0, -31.0)
-CUT_ROI_HALF_MM   = 11.0            # -> 22 mm square box
+def load_raster_cut_roi(root):
+    """Use the manually selected raster patch as the fixed cut-region ROI."""
+    with open(os.path.join(root, "raster_patch.json"), encoding="utf-8") as fh:
+        patch = json.load(fh)
+    center_x, center_y, _ = patch["center_m"]
+    xy_min, xy_max = patch["xy_min_m"], patch["xy_max_m"]
+    half_x = 0.5 * (xy_max[0] - xy_min[0])
+    half_y = 0.5 * (xy_max[1] - xy_min[1])
+    return (center_x * 1000.0, center_y * 1000.0), max(half_x, half_y) * 1000.0
+
+# CUT REGION ROI: fixed by the manually recorded raster patch, in fr3_link0 millimetres.
+CUT_ROI_CENTER_MM, CUT_ROI_HALF_MM = load_raster_cut_roi(ROOT)
 # ============================================================
 
-# ---- telemetry: load the 200 Hz Sonopet RISE JSONL once ----
-SJ = glob.glob(os.path.join(ROOT, "sonopet", "SonopetCase_*.json"))[0]
+# ---- telemetry: load all 200 Hz Sonopet RISE JSONL logs ----
+SONOPET_JSONS = sorted(glob.glob(os.path.join(ROOT, "sonopet", "SonopetCase_*.json")))
 _recs = []
-with open(SJ) as fh:
-    for ln in fh:
-        ln = ln.strip()
-        if ln:
-            d = json.loads(ln); r = d["data"]; r["ts"] = d["timestamp"]; _recs.append(r)
-TEL = pd.DataFrame(_recs)
+for sj in SONOPET_JSONS:
+    with open(sj, encoding="utf-8") as fh:
+        for ln in fh:
+            ln = ln.strip()
+            if ln:
+                d = json.loads(ln); r = d["data"]; r["ts"] = d["timestamp"]; _recs.append(r)
+TEL = pd.DataFrame(_recs).sort_values("ts").reset_index(drop=True)
 TEL_T0 = TEL.ts.min()
 
 # experiment epoch zero (earliest run start) for shared timelines
@@ -180,9 +205,9 @@ def depth_grid(xyz, extent, cell=0.0015):
     g[iy[order], ix[order]] = xyz[order, 2]
     return g
 
-def audio_env(suf, fl=4096, hop=1024):
+def audio_env(run, fl=4096, hop=1024):
     """RMS envelope of a run's audio + (time axis, total duration s)."""
-    y, sr = sf.read(os.path.join(ROOT, "audio", f"audio{suf}.wav"))
+    y, sr = sf.read(audio_path(run))
     if y.ndim > 1:
         y = y.mean(1)
     nfr = max((len(y) - fl) // hop, 1)
@@ -255,7 +280,7 @@ L(f"**Telemetry continuity:** {len(TEL)} samples @ {len(TEL)/span:.1f} Hz over {
 tl = []
 for run, suf, _ in TRIALS:
     m = MAN[run]
-    a_dur = sf.info(os.path.join(ROOT, m["audio"]["wav"])).duration
+    a_dur = sf.info(audio_path(run)).duration
     win = m["stopped_at"] - m["started_at"]
     pcs = {(p["camera"], p["label"]): p["timestamp"] for p in m["pointcloud_scans"]}
     tl.append({
@@ -281,7 +306,7 @@ print("\n=== SECTION 3: AUDIO ===")
 au_rows = []
 wave_ex = {}
 for run, suf, _ in TRIALS:
-    wav = os.path.join(ROOT, MAN[run]["audio"]["wav"])
+    wav = audio_path(run)
     y, sr = librosa.load(wav, sr=None, mono=True)
     rms = librosa.feature.rms(y=y)[0]
     cent = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
@@ -337,7 +362,7 @@ win_rows = []
 fig, axs = plt.subplots(3, 1, figsize=(11, 8))
 for ax, (run, suf, _) in zip(axs, TRIALS):
     m = MAN[run]; s, e = m["started_at"], m["stopped_at"]; win = e - s
-    te, env, adur = audio_env(suf)
+    te, env, adur = audio_env(run)
     thr = 0.05 * env.max()
     on = te[np.argmax(env > thr)] if (env > thr).any() else np.nan
     off = te[len(env)-1 - np.argmax(env[::-1] > thr)] if (env > thr).any() else np.nan
@@ -528,111 +553,45 @@ L(f"ICP fitness {ICP.icp_fitness.min():.2f}-{ICP.icp_fitness.max():.2f}, inlier 
   f"cumulative-resection trend is resolvable from the full field of view (background + moving viewpoint "
   f"dominate). See ROI analysis below.\n")
 
-# ---- 4c: OFF-TARGET x=0 ROI (NOISE BASELINE, kept for contrast) -------------
-# HISTORICAL/CONTRAST ONLY. Early passes ASSUMED the resection sat on the tool centerline
-# (x=0) and integrated a symmetric 2 cm box there. That box lands on bland, near-zero terrain
-# (the actual cut is in the lower-left, see 4d) and reads as sub-noise -> wrong "not resolvable"
-# conclusion. We keep this block to document that the negative result was an ROI-PLACEMENT
-# ARTIFACT, not a fundamental limit. The POSITIVE result is in 4d below.
-# Tip artifact: the aspirator may intrude as anomalously NEAR-FIELD points (small z) in
-# active/stop captures -> we mask points more than TIP_NEAR_MM closer than the reference
-# ROI surface (robust median) before computing tissue depth change.
-L("## Point clouds: OFF-TARGET x=0 ROI (2 cm x 2 cm around x=0) -- NOISE BASELINE for contrast\n")
-ROI_HALF = 0.010                                   # 10 mm half-width -> 2 cm box
-roi_ref_mask_x = np.abs(ref_pts[:, 0] - 0.0) < ROI_HALF
-ROI_YC = float(np.median(ref_pts[roi_ref_mask_x, 1]))   # tissue centerline y near x=0
-TIP_NEAR_MM = 6.0                                  # points >6 mm nearer than surface = tip/flyer
-L(f"ROI = 2 cm x 2 cm box, x in [-10,+10] mm, y in [{(ROI_YC-ROI_HALF)*1000:.0f},"
-  f"{(ROI_YC+ROI_HALF)*1000:.0f}] mm (y-center {ROI_YC*1000:.1f} mm from reference tissue near x=0). "
-  f"Each later cloud is ICP-registered to run_1 start (as above), cropped to the ROI, and differenced "
-  f"in a 1.5 mm depth grid against the reference ROI surface.")
-L(f"Device-tip handling: within the ROI, registered points lying more than {TIP_NEAR_MM:.0f} mm NEARER "
-  f"the camera than the reference ROI surface median are flagged as device-tip/near-field intrusion and "
-  f"MASKED before computing tissue dz (so the tip is not counted as tissue). The masked fraction and a "
-  f"tip-flag are reported per capture.\n")
-
-def roi_crop(pts):
-    m = (np.abs(pts[:, 0] - 0.0) < ROI_HALF) & (np.abs(pts[:, 1] - ROI_YC) < ROI_HALF)
-    return pts[m]
-
-ref_roi = roi_crop(ref_pts)
-ref_roi_z = float(np.median(ref_roi[:, 2]))
-ROI_EXT = (-ROI_HALF, ROI_HALF, ROI_YC-ROI_HALF, ROI_YC+ROI_HALF)
-ref_roi_grid = depth_grid(ref_roi, ROI_EXT, cell=0.0015)
-
-roi_rows, roi_panels = [], [("run_1_start (REF)", np.zeros_like(ref_roi_grid))]
-for name, p, ts in [c for c in CLOUDS if c[0] != REF_NAME]:
-    _, regpts = icp_to_ref(p)
-    roi = regpts[(np.abs(regpts[:, 0]) < ROI_HALF) & (np.abs(regpts[:, 1] - ROI_YC) < ROI_HALF)]
-    # tip / near-field mask: points much nearer than reference ROI surface
-    near = roi[:, 2] < (ref_roi_z - TIP_NEAR_MM/1000.0)
-    tip_frac = float(np.mean(near)) if len(roi) else np.nan
-    tissue = roi[~near]
-    g = depth_grid(tissue, ROI_EXT, cell=0.0015)
-    diff = (g - ref_roi_grid) * 1000.0
-    valid = np.isfinite(diff)
-    roi_rows.append(dict(cloud=name, t_rel_s=round(ts-REF_TS, 1), n_roi=len(roi),
-                         tip_frac_masked=round(tip_frac, 4),
-                         tip_flag="YES" if (tip_frac == tip_frac and tip_frac > 0.02) else "no",
-                         roi_dz_median_mm=round(float(np.nanmedian(diff)), 3),
-                         roi_dz_mean_mm=round(float(np.nanmean(diff)), 3),
-                         roi_dz_p90_mm=round(float(np.nanpercentile(diff[valid], 90)), 3),
-                         roi_vol_proxy_mm3=round(float(np.nansum(np.where(diff > 0, diff, 0))
-                                                        * 1.5 * 1.5), 1)))
-    roi_panels.append((name, diff))
-ROI = pd.DataFrame(roi_rows)
+# ---- 4c: OFF-TARGET x=0 ROI skipped for raster-frame data -------------------
+L("## Point clouds: OFF-TARGET x=0 ROI -- skipped for raster-frame data\n")
+ROI = pd.DataFrame([dict(
+    status="skipped",
+    reason="Raster point clouds are in fr3_link0 coordinates; the manually recorded raster_patch.json ROI is authoritative.",
+    cut_roi_center_x_mm=round(CUT_ROI_CENTER_MM[0], 3),
+    cut_roi_center_y_mm=round(CUT_ROI_CENTER_MM[1], 3),
+    cut_roi_half_width_mm=round(CUT_ROI_HALF_MM, 3),
+)])
 ROI.to_csv(os.path.join(OUT, "roi_resection_summary.csv"), index=False)
 print(ROI.to_string(index=False))
-
-# Off-target ROI plots removed: roi_resection_summary.csv remains as the noise-baseline table.
-
-# verdict on ROI cumulative deepening (stop captures only, monotonic check)
-order_roi = ROI.sort_values("t_rel_s").reset_index(drop=True)
-stops = order_roi[order_roi.cloud.str.endswith("_stop")].sort_values("t_rel_s")
-roi_rmse = ICP.icp_inlier_rmse_mm.median()
-stop_med = stops.roi_dz_median_mm.values
-mono = bool(len(stop_med) >= 2 and np.all(np.diff(stop_med) >= -0.3) and stop_med[-1] > stop_med[0] + 0.5)
-L("**ICP-registered ROI results (per capture):**")
-for _, r in order_roi.iterrows():
-    L(f"- {r.cloud}: ROI median dz {r.roi_dz_median_mm:+.2f} mm, mean {r.roi_dz_mean_mm:+.2f} mm, "
-      f"p90 {r.roi_dz_p90_mm:+.2f} mm, tip-masked {r.tip_frac_masked*100:.1f}% ({r.tip_flag}).")
-L(f"\nStop-capture ROI median dz (cumulative resection proxy): "
-  f"{', '.join(f'{r.cloud}={r.roi_dz_median_mm:+.2f}mm' for _, r in stops.iterrows())}. "
-  f"ICP inlier RMSE (~{roi_rmse:.2f} mm) is the registration noise floor.")
-L("**OFF-TARGET BASELINE verdict:** at the x=0 centerline guess the per-capture median/mean dz stay "
-  "within the ~1 mm ICP noise floor and show no monotonic deepening -- this is an ROI-PLACEMENT "
-  "ARTIFACT (the box is on flat terrain, not on the cut). The cut is in the lower-left; section 4d "
-  "localizes it from the data and DOES resolve a deepening cavity. Keep this block only as the "
-  "off-target/noise contrast.")
-L("Table: roi_resection_summary.csv. Off-target ROI figures were removed.\n")
+L("The historical x=0 baseline ROI is incompatible with this raster dataset because the tissue lives in "
+  "robot/world coordinates, not around the optical-frame x=0 centerline. The cut-region analysis below "
+  "uses raster_patch.json directly.\n")
 
 # ---- 4d: EXPLICIT CUT-REGION RESECTION DEPTH (positive result) --------------
 # The cut ROI and noise box are now defined EXPLICITLY by the XY config constants at the top
 # of this file (NOISE_BOX_MM, CUT_ROI_CENTER_MM, CUT_ROI_HALF_MM) -- no auto-localization.
 # Pipeline: (1) background-only point-to-plane ICP to run_1 start, masking out a generous
-# tissue zone (union of the x=0 box and a lower-left window) so neither the cut nor the x=0
-# box biases registration; (2) estimate the registration noise floor from the EXPLICIT static
+# tissue zone around the manual raster patch so the cut does not bias registration;
+# (2) estimate the registration noise floor from the EXPLICIT static
 # NOISE_BOX (robust MAD sigma of reference-relative dz inside it), threshold = 2*sigma;
 # (3) integrate reference-relative depth over the EXPLICIT CUT ROI across run_1_start ->
 # run_1_stop -> run_2_stop -> run_3_stop, with monotonic dz stats; (4) net + positive-recession
 # volume proxies with a noise-floor error bar.
 L("## Point clouds: EXPLICIT cut-region resection depth (config-defined ROI, bg-only ICP) -- POSITIVE\n")
 
-# bg-only ICP reference: exclude a GENEROUS tissue zone = union of the x=0 box and a lower-left
-# window covering the cut, so the registration locks to static background only. (This exclusion
-# window is independent of the analysis CUT ROI; it only protects the ICP fit.)
+# bg-only ICP reference: exclude a generous tissue zone around the manual raster cut patch,
+# so the registration locks to static background only.
 xs_g = np.linspace(EXT[0], EXT[1], ref_grid.shape[1]); ys_g = np.linspace(EXT[2], EXT[3], ref_grid.shape[0])
 GX, GY = np.meshgrid(xs_g, ys_g)
 NY, NX = ref_grid.shape
-LL_CX, LL_CY = -8.0, -30.0          # mm, lower-left ICP-exclusion window center (covers the cut)
-LL_HW_X, LL_HW_Y = 18.0, 22.0
+LL_CX, LL_CY = CUT_ROI_CENTER_MM
+LL_HW_X = max(18.0, CUT_ROI_HALF_MM + 8.0)
+LL_HW_Y = max(22.0, CUT_ROI_HALF_MM + 12.0)
 LL_WIN = (np.abs(GX*1000 - LL_CX) < LL_HW_X) & (np.abs(GY*1000 - LL_CY) < LL_HW_Y)
-roi_x0_cellmask = (np.abs(GX) < ROI_HALF) & (np.abs(GY - ROI_YC) < ROI_HALF)
 
 def in_tissue_zone(pts):
-    a = (np.abs(pts[:, 0]) < ROI_HALF) & (np.abs(pts[:, 1] - ROI_YC) < ROI_HALF)  # x=0 box
-    b = (np.abs(pts[:, 0]*1000 - LL_CX) < LL_HW_X) & (np.abs(pts[:, 1]*1000 - LL_CY) < LL_HW_Y)
-    return a | b
+    return (np.abs(pts[:, 0]*1000 - LL_CX) < LL_HW_X) & (np.abs(pts[:, 1]*1000 - LL_CY) < LL_HW_Y)
 
 ref_bg_pc = to_pcd(ref_pts[~in_tissue_zone(ref_pts)]).voxel_down_sample(0.001)
 ref_bg_pc.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=0.005, max_nn=30))
@@ -782,10 +741,8 @@ VOL.to_csv(os.path.join(OUT, "cutregion_volume_proxy.csv"), index=False)
 print(VOL.to_string(index=False))
 detect_mean_dz = 2.0*NOISE_RSTD/np.sqrt(cut_n_cells); detect_vol = detect_mean_dz*cut_area_mm2
 cum_vol = float(VOL[VOL.cloud == "run_3_stop"].vol_net_mm3.iloc[0]) if "run_3_stop" in set(VOL.cloud) else np.nan
-# The CUT ROI is now the -4 mm left-shifted box @ (-9,-31), which excludes most of the adjacent
-# blue (approached) standoff-dipole lobe on the right edge. As a result the SIGNED box-mean is
-# now monotonic and positive across stops (frac_approached drops to ~0.03 by run_3_stop) and is
-# usable alongside the ROI MEDIAN and the positive-recession (cavity) volume integral.
+# The CUT ROI is fixed by raster_patch.json, so the signed box-mean is tied to the manually
+# selected robot raster region rather than a data-derived or hand-shifted image feature.
 cum_vol_pos = float(VOL[VOL.cloud == "run_3_stop"].vol_pos_only_mm3.iloc[0]) if "run_3_stop" in set(VOL.cloud) else np.nan
 med_stops = ", ".join(f"{r.roi_med_dz:+.2f}" for _, r in stops_cut.iterrows())
 mean_stops = ", ".join(f"{r.roi_mean_dz:+.2f}" for _, r in stops_cut.iterrows())
@@ -797,14 +754,13 @@ L(f"Detectable (2sigma on ROI mean) net recession >= {detect_mean_dz:.3f} mm => 
   f"over the {cut_area_mm2:.0f} mm^2 ROI. Cumulative run_3_stop cavity (positive-recession) volume "
   f"~{cum_vol_pos:.0f} mm^3 (~{cum_vol_pos/1000:.2f} cm^3) vs 1.40 g ground truth (~1.33 cm^3): same order, "
   f"NOT calibrated. (Signed box-mean net proxy ~{cum_vol:.0f} mm^3, now also positive/monotonic.)")
-L(f"**Cut-region verdict:** with the EXPLICIT cut ROI = the -4 mm left-shifted 22 mm box @ "
-  f"(x={CUT_CX:.0f}, y={CUT_CY:.0f} mm), cumulative tissue removal IS resolvable from single-view in-hand depth: "
+L(f"**Cut-region verdict:** with the EXPLICIT cut ROI from raster_patch.json @ "
+  f"(x={CUT_CX:.0f}, y={CUT_CY:.0f} mm, half-width {CUT_HALF_MM:.0f} mm), cumulative tissue removal IS resolvable from single-view in-hand depth: "
   f"ROI MEDIAN dz deepens monotonically (stops: {med_stops} mm), MEAN dz too (stops: {mean_stops} mm), the "
   f"coherent receded cavity grows ({area_stops} mm^2), and the cavity-volume integral ({posv_stops} mm^3) "
-  f"reaches the same order as the 1.33 cm^3 ground truth. The left shift excludes most of the adjacent blue "
-  f"(approached) standoff-dipole lobe -- frac_approached at the stops drops to ({fapp_stops}) -- so the SIGNED "
-  f"MEAN is now usable (no longer contaminated/non-monotonic). The earlier x=0 'not resolvable' result was an "
-  f"ROI-placement artifact. ROI is config-defined for future waypoint-driven use.\n")
+  f"reaches the same order as the 1.33 cm^3 ground truth. The manually recorded raster box fixes the analysis "
+  f"to the commanded cut location; frac_approached at the stops is ({fapp_stops}). The earlier x=0 "
+  f"'not resolvable' result was an ROI-placement artifact.\n")
 
 # ---- FIGURE A: layer-state significance panel with focused cut ROI overlaid ----
 def sig_masked(diff):
@@ -840,7 +796,7 @@ for ax, (name, label, diff, rb) in zip(axs, LAYER_STATES):
     ax.set_xlabel("x (mm)"); ax.set_ylabel("y (mm)")
     plt.colorbar(im, ax=ax, shrink=0.7, label="dz vs ref (mm)\n+ = receded")
 leg_c = [Line2D([0], [0], color=COLORS["cut_roi"], lw=1.8,
-                label=f"CUT ROI (22 mm box @ {CUT_CX:.0f},{CUT_CY:.0f} mm)"),
+                label=f"CUT ROI ({2*CUT_HALF_MM:.0f} mm box @ {CUT_CX:.0f},{CUT_CY:.0f} mm)"),
          Line2D([0], [0], color=COLORS["noise_box"], lw=1.6,
                 label=f"NOISE_BOX x[{NBx0:.0f},{NBx1:.0f}] y[{NBy0:.0f},{NBy1:.0f}] mm")]
 fig.legend(handles=leg_c, loc="lower center", ncol=2, fontsize=8, framealpha=0.9)
@@ -920,6 +876,9 @@ fig3, ax3 = plt.subplots(1, 3, figsize=(13, 4))
 for run, suf, _ in TRIALS:
     m = MAN[run]; s, e = m["started_at"], m["stopped_at"]
     sub = TEL[(TEL.ts >= s) & (TEL.ts <= e)].copy().reset_index(drop=True)
+    if sub.empty:
+        L(f"- {run}: no Sonopet telemetry samples inside manifest window; skipping frequency plots/stats.")
+        continue
     f = sub.Frequency_Hz.values; rel = (sub.ts - s).values
     w = 201 if len(f) > 201 else (len(f)//2*2 - 1)
     fsm = savgol_filter(f, w, 2) if w >= 5 else f
@@ -960,6 +919,8 @@ FQ.to_csv(os.path.join(OUT, "10_frequency_finegrained.csv"), index=False)
 corr_rows = []
 for run, suf, _ in TRIALS:
     m = MAN[run]; sub = TEL[(TEL.ts >= m["started_at"]) & (TEL.ts <= m["stopped_at"])]
+    if len(sub) < 2:
+        continue
     f = sub.Frequency_Hz.values
     for load in ["MechResistance_Ohm", "Power_W", "I_Handpiece_mag_A", "Z_Handpiece_mag_Ohm"]:
         rr, pp = pearsonr(sub[load].values, f)
@@ -978,6 +939,14 @@ L(f"Center ~{FQ.freq_mean_Hz.mean():.0f} Hz. Within-run drift "
 tel_rows = []
 for run, suf, _ in TRIALS:
     m = MAN[run]; sub = TEL[(TEL.ts >= m["started_at"]) & (TEL.ts <= m["stopped_at"])]
+    if sub.empty or run not in set(FQ.run):
+        tel_rows.append(dict(run=run, n_samples=len(sub), rate_hz=np.nan,
+                             power_W_mean=np.nan, power_W_std=np.nan,
+                             mech_R_ohm_mean=np.nan, mech_R_ohm_std=np.nan,
+                             freq_Hz_mean=np.nan, freq_Hz_std=np.nan,
+                             freq_within_run_drift_Hz=np.nan,
+                             footpedal_pct_mean=np.nan))
+        continue
     fr = FQ[FQ.run == run].iloc[0]
     tel_rows.append(dict(run=run, n_samples=len(sub),
                          rate_hz=round(len(sub)/(sub.ts.max()-sub.ts.min()), 1),
@@ -1020,7 +989,7 @@ fig, axrows = plt.subplots(3, 3, figsize=(15, 9), sharex="col")
 for ci, (run, suf, _) in enumerate(TRIALS):
     m = MAN[run]; s, e = m["started_at"], m["stopped_at"]; win = e - s
     sub = TEL[(TEL.ts >= s) & (TEL.ts <= e)].copy(); rel = (sub.ts - s).values
-    te, env, adur = audio_env(suf)
+    te, env, adur = audio_env(run)
     pcs = {(p["camera"], p["label"]): p["timestamp"]-s for p in m["pointcloud_scans"]}
     vt = video_times(run)
     a0 = axrows[0, ci]; a0b = a0.twinx()
@@ -1062,7 +1031,7 @@ fig.savefig(os.path.join(FIG, "unified_sync_timeline.png")); plt.close(fig)
 fig, ax = plt.subplots(figsize=(12, 4.6))
 for i, (run, suf, _) in enumerate(TRIALS):
     m = MAN[run]; s, e = m["started_at"], m["stopped_at"]; win = e - s; s0 = s - TEL_T0
-    te, env, adur = audio_env(suf); vt = video_times(run)
+    te, env, adur = audio_env(run); vt = video_times(run)
     ax.barh(i, win, left=s0, height=0.62, color="#9ec5e8", edgecolor="k",
             label="manifest run window" if i == 0 else None)
     ax.barh(i, adur, left=s0, height=0.30, color=COLORS["audio"], label="audio capture" if i == 0 else None)

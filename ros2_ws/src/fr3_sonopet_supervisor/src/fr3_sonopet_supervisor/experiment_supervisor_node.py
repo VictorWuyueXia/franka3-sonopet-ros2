@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 import rclpy
+from fr3_sonopet_interfaces.msg import RasterPlan
 from fr3_sonopet_interfaces.msg import RunState as RunStateMsg
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
@@ -19,6 +20,7 @@ from fr3_sonopet_supervisor.run_state import RunState
 ARTIFACT_PATH_TOPIC = "/sonopet/artifact_path"
 MOTION_STATE_TOPIC = "/fr3/motion"
 JOINT_STATES_TOPIC = "/joint_states"
+RASTER_PLAN_TOPIC = "/sonopet/raster_plan"
 
 
 @dataclass
@@ -26,6 +28,7 @@ class ActiveMotionTrace:
     """In-memory joint trace for one physical robot motion interval."""
 
     started_at: float
+    raster_patch: dict | None
     seen_messages: int = 0
     joint_names: list[str] = field(default_factory=list)
     samples: list[tuple[int, int, tuple[float, ...]]] = field(default_factory=list)
@@ -43,6 +46,7 @@ class ExperimentSupervisorNode(Node):
         self._joint_state_downsample = int(self.get_parameter("joint_state_downsample").value)
         self._artifact_path: Path | None = None
         self._active_motion: ActiveMotionTrace | None = None
+        self._latest_raster_patch: dict | None = None
         self._state_pub = self.create_publisher(RunStateMsg, "/sonopet/run_state", 10)
         artifact_qos = QoSProfile(
             depth=1,
@@ -53,7 +57,7 @@ class ExperimentSupervisorNode(Node):
         self._artifact_path_sub = self.create_subscription(
             String,
             ARTIFACT_PATH_TOPIC,
-            lambda msg: setattr(self, "_artifact_path", Path(msg.data)),
+            self._on_artifact_path,
             artifact_qos,
         )
         self._motion_state_sub = self.create_subscription(
@@ -68,13 +72,29 @@ class ExperimentSupervisorNode(Node):
             self._on_joint_state,
             10,
         )
+        self._raster_plan_sub = self.create_subscription(
+            RasterPlan,
+            RASTER_PLAN_TOPIC,
+            self._on_raster_plan,
+            10,
+        )
         self._state_timer = self.create_timer(1.0, self._publish_state)
         self.get_logger().info(f"Experiment supervisor ready: run_id={self._state.run_id}")
+
+    def _on_artifact_path(self, msg: String) -> None:
+        # The artifact root can arrive before or after the operator-selected raster patch.
+        self._artifact_path = Path(msg.data)
+        self._write_raster_patch_artifact()
 
     def _on_motion_state(self, msg: Bool) -> None:
         # Motion-state edges define one buffered joint trace interval.
         if msg.data and self._active_motion is None:
-            self._active_motion = ActiveMotionTrace(started_at=time.time())
+            if self._latest_raster_patch is None:
+                self.get_logger().warning("Motion started before any raster patch was published.")
+            self._active_motion = ActiveMotionTrace(
+                started_at=time.time(),
+                raster_patch=self._latest_raster_patch,
+            )
         if not msg.data and self._active_motion is not None:
             stopped_at = time.time()
             active_motion = self._active_motion
@@ -116,10 +136,38 @@ class ExperimentSupervisorNode(Node):
                 "real_sample_rate_hz": real_sample_rate_hz,
                 "csv": str(csv_path.relative_to(artifact_path)),
             }
+            if active_motion.raster_patch is not None:
+                payload["raster_patch"] = active_motion.raster_patch
             meta_path.write_text(
                 json.dumps(payload, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+
+    def _on_raster_plan(self, plan: RasterPlan) -> None:
+        # The raster patch is the operator-selected pointcloud area from RViz.
+        patch = plan.patch
+        center = patch.center
+        half_side_m = float(patch.square_side_m) / 2.0
+        self._latest_raster_patch = {
+            "frame_id": patch.header.frame_id or plan.header.frame_id,
+            "center_m": [float(center.x), float(center.y), float(center.z)],
+            "xy_min_m": [float(center.x) - half_side_m, float(center.y) - half_side_m],
+            "xy_max_m": [float(center.x) + half_side_m, float(center.y) + half_side_m],
+            "square_side_m": float(patch.square_side_m),
+            "line_spacing_m": float(patch.line_spacing_m),
+            "pattern": str(patch.pattern),
+        }
+        self._write_raster_patch_artifact()
+
+    def _write_raster_patch_artifact(self) -> None:
+        # Persist the selected raster region independently of joint trace finalization.
+        if self._artifact_path is None or self._latest_raster_patch is None:
+            return
+        patch_path = self._artifact_path / "raster_patch.json"
+        patch_path.write_text(
+            json.dumps(self._latest_raster_patch, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
     def _on_joint_state(self, msg: JointState) -> None:
         # The first live sample anchors the trace, then every Nth sample is retained.

@@ -40,13 +40,13 @@ import open3d as o3d
 from scipy import ndimage
 
 # >>> SET THIS to the dataset folder you want to analyze (same as analyze.py) <<<
-ROOT = "/media/btllab/B2EEF271EEF22CEB/Ubuntu/franka3-sonopet-ros2/data_collection/experiments/20260601T155242_chicken_1_90_50_15_3"
+ROOT = "/media/btllab/B2EEF271EEF22CEB/Ubuntu/franka3-sonopet-ros2/data_collection/experiments/20260605T172526_chicken_5_90_50_15_1.5"
 OUT  = os.path.join(ROOT, "analysis_outputs")
 FIG  = os.path.join(OUT, "figures")
 os.makedirs(FIG, exist_ok=True)
 plt.rcParams.update({"figure.dpi": 120, "savefig.dpi": 220, "font.size": 9})
 
-TRIALS = [("run_1", "",   0),
+TRIALS = [("run_1", "_0", 0),
           ("run_2", "_1", 1),
           ("run_3", "_2", 2)]
 
@@ -107,7 +107,7 @@ def cloud_inventory():
     for run, suf, _ in TRIALS:
         for label in ["start", "stop"]:
             pc = in_hand_cloud_record(run, label)
-            p = os.path.join(ROOT, pc["path"])
+            p = os.path.join(ROOT, "camera_in_hand", f"pointcloud_{label}{suf}.pcd")
             ts = pc["timestamp"]
             clouds.append((f"{run}_{label}", p, ts))
     clouds.sort(key=lambda c: c[2])
@@ -123,10 +123,19 @@ def corrected_clean(path):
         pts = pts.copy(); pts[:, 2] *= -1
     return pts
 
-# ---- ROI / background-mask setup (verbatim) --------------------------------
-ROI_HALF = 0.010
+def load_raster_cut_roi(root):
+    """Use the manually recorded raster patch as the plotted cut ROI."""
+    with open(os.path.join(root, "raster_patch.json"), encoding="utf-8") as fh:
+        patch = json.load(fh)
+    center_x, center_y, _ = patch["center_m"]
+    xy_min, xy_max = patch["xy_min_m"], patch["xy_max_m"]
+    half_x = 0.5 * (xy_max[0] - xy_min[0])
+    half_y = 0.5 * (xy_max[1] - xy_min[1])
+    return (center_x * 1000.0, center_y * 1000.0), max(half_x, half_y) * 1000.0
+
+# ---- ROI / background-mask setup -------------------------------------------
+CUT_ROI_CENTER_MM, CUT_ROI_HALF_MM = load_raster_cut_roi(ROOT)
 ref_pts = corrected_clean(REF_PATH)
-ROI_YC = float(np.median(ref_pts[np.abs(ref_pts[:, 0]) < ROI_HALF, 1]))
 
 EXT = (np.percentile(ref_pts[:, 0], 1), np.percentile(ref_pts[:, 0], 99),
        np.percentile(ref_pts[:, 1], 1), np.percentile(ref_pts[:, 1], 99))
@@ -139,16 +148,12 @@ NY, NX = ref_grid.shape
 xs = np.linspace(EXT[0], EXT[1], NX); ys = np.linspace(EXT[2], EXT[3], NY)
 GX, GY = np.meshgrid(xs, ys)
 
-LL_CX, LL_CY = -8.0, -30.0
-LL_HW_X, LL_HW_Y = 18.0, 22.0
-
-def in_x0_roi(pts):
-    return (np.abs(pts[:, 0]) < ROI_HALF) & (np.abs(pts[:, 1] - ROI_YC) < ROI_HALF)
+LL_CX, LL_CY = CUT_ROI_CENTER_MM
+LL_HW_X = max(18.0, CUT_ROI_HALF_MM + 8.0)
+LL_HW_Y = max(22.0, CUT_ROI_HALF_MM + 12.0)
 
 def in_tissue_zone(pts):
-    a = in_x0_roi(pts)
-    b = (np.abs(pts[:, 0]*1000 - LL_CX) < LL_HW_X) & (np.abs(pts[:, 1]*1000 - LL_CY) < LL_HW_Y)
-    return a | b
+    return (np.abs(pts[:, 0]*1000 - LL_CX) < LL_HW_X) & (np.abs(pts[:, 1]*1000 - LL_CY) < LL_HW_Y)
 
 ref_bg_pts = ref_pts[~in_tissue_zone(ref_pts)]
 ref_bg_pc = to_pcd(ref_bg_pts).voxel_down_sample(0.001)
@@ -184,10 +189,8 @@ for name in PANELS:
     _, rp = icp_bg_only(PATHS[name])
     diffs[name] = diff_map(rp)
 
-# ---- EXPLICIT REGION CONFIG (keep in sync with analyze.py SECTION 0) ---------
-NOISE_BOX_MM      = (50.0, 90.0, 20.0, 40.0)   # static background box for noise floor
-CUT_ROI_CENTER_MM = (540.0, 105.0)             # manual chicken ROI: x[530,550], y[95,115] mm
-CUT_ROI_HALF_MM   = 10.0                       # -> 20 mm square box
+# ---- EXPLICIT REGION CONFIG (keep in sync with analyze_raster.py) -----------
+NOISE_BOX_MM      = (580.0, 610.0, 145.0, 175.0)   # static background box in fr3_link0 mm
 CUT_CX, CUT_CY = CUT_ROI_CENTER_MM
 CUT_HALF_MM = CUT_ROI_HALF_MM
 
@@ -206,9 +209,6 @@ _nb = np.concatenate([_nbdiffs[n][_nbmask & np.isfinite(_nbdiffs[n])] for n in N
 NOISE_MED  = float(np.median(_nb))
 SIG_THRESH = float(2.0*1.4826*np.median(np.abs(_nb-NOISE_MED)))   # mm, 2-sigma
 
-# off-target x=0 ROI (the earlier wrong location, flat terrain) -- shown only as a faint contrast box
-X0_CX, X0_CY = 0.0, ROI_YC*1000  # mm
-
 extmm = [e*1000 for e in EXT]
 
 # shared color scale across all four panels (98th pct of |dz| over the well panels)
@@ -217,9 +217,14 @@ VLIM = max(float(np.nanpercentile(np.abs(allv), 98)), 2.0)
 
 # summary table for per-panel annotation
 SUM = pd.read_csv(os.path.join(OUT, "cutregion_summary.csv"))
+VOL = pd.read_csv(os.path.join(OUT, "cutregion_volume_proxy.csv"))
 def sum_row(name):
     key = "run_1_start(REF)" if name == "run_1_start" else name
     r = SUM[SUM.cloud == key]
+    return r.iloc[0] if len(r) else None
+
+def volume_row(name):
+    r = VOL[VOL.cloud == name]
     return r.iloc[0] if len(r) else None
 
 # ---- contour helper: dominant receded / approached blob masks ---------------
@@ -286,11 +291,10 @@ def fig_overview():
     im = ax.imshow(diff, origin="lower", extent=extmm, cmap=plt.cm.RdBu_r,
                    vmin=-VLIM, vmax=VLIM, aspect="equal")
 
-    # ROI boxes: explicit cut ROI (lime) + NOISE_BOX (magenta) + faint x=0 contrast box
+    # ROI boxes: explicit raster cut ROI (lime) + static NOISE_BOX (magenta).
     draw_box(ax, CUT_CX, CUT_CY, CUT_HALF_MM, edgecolor="lime", lw=2.4)
     ax.add_patch(Rectangle((NBx0, NBy0), NBx1-NBx0, NBy1-NBy0, fill=False,
                            edgecolor="magenta", lw=2.0))
-    draw_box(ax, X0_CX, X0_CY, ROI_HALF*1000, edgecolor="0.45", lw=1.2, ls=":")
 
     # cavity + lobe contours
     rm, bm = red_mask(name), blue_mask(name)
@@ -306,9 +310,8 @@ def fig_overview():
     cb.set_label("dz vs reference (mm)\n+ = receded (tissue removed)")
 
     legend = [
-        Line2D([0],[0], color="lime", lw=2.4, label=f"cut ROI: 22 mm box @ ({CUT_CX:.0f},{CUT_CY:.0f})"),
+        Line2D([0],[0], color="lime", lw=2.4, label=f"cut ROI: {2*CUT_HALF_MM:.0f} mm box @ ({CUT_CX:.0f},{CUT_CY:.0f})"),
         Line2D([0],[0], color="magenta", lw=2.0, label=f"NOISE_BOX x[{NBx0:.0f},{NBx1:.0f}] y[{NBy0:.0f},{NBy1:.0f}] (noise floor)"),
-        Line2D([0],[0], color="0.45", lw=1.2, ls=":", label="off-target x=0 ROI (legacy contrast)"),
         Line2D([0],[0], color="#7f0000", lw=2.4, label=f"receded cavity (removed), dz>+{SIG_THRESH:.2f} mm (2$\\sigma$)"),
         Line2D([0],[0], color="#08306b", lw=2.4, label=f"approached lobe (standoff/dipole), dz<-{SIG_THRESH:.2f} mm"),
     ]
@@ -347,7 +350,7 @@ def fig_progression():
     cb = fig.colorbar(im, ax=axs, shrink=0.8, pad=0.01)
     cb.set_label("dz vs reference (mm)   + = receded (removed, red)")
     fig.suptitle(f"Cavity progression across runs  (shared scale +/-{VLIM:.1f} mm, bg-only ICP vs {REF_NAME}).  "
-                 f"Lime = 22 mm cut ROI @ ({CUT_CX:.0f},{CUT_CY:.0f}).  Magenta = NOISE_BOX (noise floor).  "
+                 f"Lime = {2*CUT_HALF_MM:.0f} mm cut ROI @ ({CUT_CX:.0f},{CUT_CY:.0f}).  Magenta = NOISE_BOX (noise floor).  "
                  f"Dark-red contour = receded cavity (dz>+{SIG_THRESH:.2f} mm, 2$\\sigma$).  "
                  f"Dark-blue contour = approached lobe (dz<-{SIG_THRESH:.2f} mm).",
                  fontsize=10)
@@ -356,10 +359,7 @@ def fig_progression():
 
 # ============================================================
 # FIGURE 3: ROI ZOOM (run_2_stop + run_3_stop, ~5x5 cm window)
-# The ADOPTED cut ROI is the -4 mm left-shifted box @ (-9,-31): it largely excludes the blue
-# (approached) standoff-dipole lobe that sits on the RIGHT edge. The old (-5,-31) center is shown
-# as a faint dashed reference for context. Per-box red/blue fractions quantify the exclusion.
-PREV_CX = CUT_CX + 4.0   # the prior (-5,-31) center, before the -4 mm left shift
+# The cut ROI is the manually recorded raster patch from raster_patch.json.
 def fig_zoom():
     zoom_names = ["run_2_stop", "run_3_stop"]
     win = 25.0  # half-window mm -> 5x5 cm
@@ -370,21 +370,23 @@ def fig_zoom():
         diff = diffs[name]
         im = ax.imshow(diff, origin="lower", extent=extmm, cmap=plt.cm.RdBu_r,
                        vmin=-VLIM, vmax=VLIM, aspect="equal")
-        # adopted box (solid lime) and prior un-shifted box (dashed grey, context)
         draw_box(ax, CUT_CX, CUT_CY, CUT_HALF_MM, edgecolor="lime", lw=2.4)
-        draw_box(ax, PREV_CX, CUT_CY, CUT_HALF_MM, edgecolor="0.35", lw=1.8, ls="--")
         draw_contour(ax, red_mask(name), "#7f0000", lw=2.2)
         draw_contour(ax, blue_mask(name), "#08306b", lw=2.2)
 
-        rc, bc = box_fractions(diff, CUT_CX, CUT_CY, CUT_HALF_MM)         # adopted box
-        rp, bp = box_fractions(diff, PREV_CX, CUT_CY, CUT_HALF_MM)        # prior box
-        fracs[name] = dict(adopt_red=rc, adopt_blue=bc, prev_red=rp, prev_blue=bp)
+        rc, bc = box_fractions(diff, CUT_CX, CUT_CY, CUT_HALF_MM)
+        fracs[name] = dict(adopt_red=rc, adopt_blue=bc)
 
         ax.set_xlim(CUT_CX-win, CUT_CX+win)
         ax.set_ylim(CUT_CY-win, CUT_CY+win)
         ax.set_xlabel("x (mm)"); ax.set_title(name, fontsize=11)
-        txt = (f"adopted ({CUT_CX:.0f},{CUT_CY:.0f}): red {rc*100:.0f}% / blue {bc*100:.0f}%\n"
-               f"prior ({PREV_CX:.0f},{CUT_CY:.0f}):   red {rp*100:.0f}% / blue {bp*100:.0f}%")
+        sr = sum_row(name)
+        vr = volume_row(name)
+        txt = f"raster ROI ({CUT_CX:.0f},{CUT_CY:.0f}): red {rc*100:.0f}% / blue {bc*100:.0f}%"
+        if sr is not None and vr is not None:
+            txt += (f"\nmedian dz {sr.roi_med_dz:+.2f} mm, mean dz {vr.roi_mean_dz_mm:+.2f} mm"
+                    f"\nnet volume {vr.vol_net_mm3:.0f} mm3 ({vr.vol_net_mm3/1000:.2f} cm3)"
+                    f"\npos-only volume {vr.vol_pos_only_mm3:.0f} mm3 ({vr.vol_pos_only_mm3/1000:.2f} cm3)")
         ax.text(0.02, 0.02, txt, transform=ax.transAxes, fontsize=8.5,
                 va="bottom", ha="left",
                 bbox=dict(boxstyle="round", fc="white", ec="0.5", alpha=0.9))
@@ -392,15 +394,13 @@ def fig_zoom():
     cb = fig.colorbar(im, ax=axs, shrink=0.8, pad=0.01)
     cb.set_label("dz vs reference (mm)   + = receded (removed, red)")
     legend = [
-        Line2D([0],[0], color="lime", lw=2.4, label=f"ADOPTED cut ROI (22 mm @ {CUT_CX:.0f},{CUT_CY:.0f})"),
-        Line2D([0],[0], color="0.35", lw=1.8, ls="--", label=f"prior un-shifted box ({PREV_CX:.0f},{CUT_CY:.0f})"),
+        Line2D([0],[0], color="lime", lw=2.4, label=f"raster cut ROI ({2*CUT_HALF_MM:.0f} mm @ {CUT_CX:.0f},{CUT_CY:.0f})"),
         Line2D([0],[0], color="#7f0000", lw=2.2, label=f"receded cavity (dz>+{SIG_THRESH:.2f} mm)"),
         Line2D([0],[0], color="#08306b", lw=2.2, label=f"approached lobe (dz<-{SIG_THRESH:.2f} mm)"),
     ]
-    fig.legend(handles=legend, fontsize=8.5, loc="upper center", ncol=4, framealpha=0.9,
+    fig.legend(handles=legend, fontsize=8.5, loc="upper center", ncol=3, framealpha=0.9,
                bbox_to_anchor=(0.5, 1.02))
-    fig.suptitle("Cut-region zoom (~5x5 cm): adopted -4 mm left-shifted ROI @ (-9,-31) excludes "
-                 "most of the blue (approached) standoff-dipole lobe on the right edge.",
+    fig.suptitle("Cut-region zoom (~5x5 cm): raster_patch.json fixes the manual cut ROI.",
                  fontsize=11, y=1.06)
     out = os.path.join(FIG, "annotated_roi_zoom.png")
     fig.savefig(out, bbox_inches="tight"); plt.close(fig)
@@ -414,5 +414,4 @@ if __name__ == "__main__":
     print(f"NOISE_BOX {NOISE_BOX_MM} -> 2sigma = {SIG_THRESH:.3f} mm; "
           f"CUT_ROI center {CUT_ROI_CENTER_MM} half {CUT_ROI_HALF_MM} mm")
     for nm, f in fr.items():
-        print(f"{nm}: adopted box red={f['adopt_red']*100:.1f}% blue={f['adopt_blue']*100:.1f}% | "
-              f"prior box red={f['prev_red']*100:.1f}% blue={f['prev_blue']*100:.1f}%")
+        print(f"{nm}: raster box red={f['adopt_red']*100:.1f}% blue={f['adopt_blue']*100:.1f}%")

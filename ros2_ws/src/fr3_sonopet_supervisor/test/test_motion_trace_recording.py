@@ -11,16 +11,26 @@ def test_supervisor_records_motion_trace_from_motion_state_and_joint_states():
     assert 'ARTIFACT_PATH_TOPIC = "/sonopet/artifact_path"' in node
     assert 'MOTION_STATE_TOPIC = "/fr3/motion"' in node
     assert 'JOINT_STATES_TOPIC = "/joint_states"' in node
+    assert 'RASTER_PLAN_TOPIC = "/sonopet/raster_plan"' in node
     assert "self.declare_parameter(\"joint_state_downsample\")" in node
     assert "DurabilityPolicy.TRANSIENT_LOCAL" in node
     assert "self._artifact_path_sub = self.create_subscription(" in node
+    assert "self._on_artifact_path" in node
     assert "self._motion_state_sub = self.create_subscription(" in node
     assert "self._joint_state_sub = self.create_subscription(" in node
+    assert "self._raster_plan_sub = self.create_subscription(" in node
     assert "class ActiveMotionTrace:" in node
+    assert "def _on_artifact_path(self, msg: String) -> None:" in node
     assert "def _on_motion_state(self, msg: Bool) -> None:" in node
     assert "def _on_joint_state(self, msg: JointState) -> None:" in node
+    assert "def _on_raster_plan(self, plan: RasterPlan) -> None:" in node
+    assert "def _write_raster_patch_artifact(self) -> None:" in node
+    assert '"raster_patch.json"' in node
     assert '"joint_states.csv"' in node
     assert '"joint_states_meta.json"' in node
+    assert '"raster_patch"' in node
+    assert '"xy_min_m"' in node
+    assert '"xy_max_m"' in node
     assert '"real_sample_rate_hz": real_sample_rate_hz' in node
     assert '"downsample": self._joint_state_downsample' in node
     assert 'raise RuntimeError(f"Artifact path has not arrived on {ARTIFACT_PATH_TOPIC}")' in node
