@@ -69,7 +69,8 @@ def load_raw(path):
     valid = np.isfinite(xyz).all(1) & (np.abs(xyz).sum(1) > 1e-9)
     return xyz[valid]
 
-def load_clean(path, z_gate=(0.10, 0.22)):
+def load_clean(path, z_gate=(0.08, 0.22)):
+    """Keep the near meat surface while rejecting the far board/petri background."""
     pc = o3d.io.read_point_cloud(path)
     xyz = np.asarray(pc.points)
     valid = np.isfinite(xyz).all(1) & (np.abs(xyz).sum(1) > 1e-9)

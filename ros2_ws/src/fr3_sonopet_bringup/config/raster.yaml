@@ -2,6 +2,8 @@ raster:
   target_frame: fr3_link0
   planning_cloud_topic: /sonopet/captured_planning_cloud
   planning_cloud_display_topic: /sonopet/planning_cloud
+  planning_cloud_max_distance_m: 0.5
+  planning_cloud_trim_fraction: 0.2
   clicked_point_topic: /clicked_point
   square_side_m: 0.02
   line_spacing_m: 0.002

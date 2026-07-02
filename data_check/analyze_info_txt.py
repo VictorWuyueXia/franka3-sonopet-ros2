@@ -132,8 +132,8 @@ def row_values(rows: list[dict], key: str) -> list:
 
 
 def experiment_labels(rows: list[dict]) -> list[str]:
-    """Use folder names as stable x-axis labels."""
-    return [str(row["experiment"]) for row in rows]
+    """Use experiment descriptors without the leading timestamp."""
+    return [str(row["experiment"]).split("_", 1)[1] for row in rows]
 
 
 def save_weight_before_after(rows: list[dict], fig_dir: Path) -> None:
@@ -177,6 +177,30 @@ def save_sample_mass_change(rows: list[dict], fig_dir: Path) -> None:
     plt.close(fig)
 
 
+def save_luken_tissue_comparison(rows: list[dict], fig_dir: Path) -> None:
+    """Compare sample mass removed from before/after weights with tissue recovered from Luken."""
+    labels = experiment_labels(rows)
+    x = list(range(len(rows)))
+    width = 0.32
+    series = [
+        ("sample removed = before - after", row_values(rows, "sample_mass_removed_g"), "#1f4e79"),
+        ("Luken tissue = recovered meat", row_values(rows, "tissue_take_out_from_luken_value"), "#7a3b9e"),
+    ]
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    for offset, (name, values, color) in zip([-0.5 * width, 0.5 * width], series, strict=True):
+        ax.bar([idx + offset for idx in x], values, width=width, label=name, color=color)
+    ax.axhline(0.0, color="black", linewidth=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=35, ha="right")
+    ax.set_ylabel("Mass (g, positive = removed or recovered)")
+    ax.set_title("Sample Removed (Before - After) vs Luken Tissue Recovered")
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(fig_dir / "sample_removed_vs_luken_tissue.png")
+    plt.close(fig)
+
+
 def save_collected_mass_summary(rows: list[dict], fig_dir: Path) -> None:
     """Compare sample mass change with material and fluid collected downstream."""
     labels = experiment_labels(rows)
@@ -205,22 +229,21 @@ def save_collected_mass_summary(rows: list[dict], fig_dir: Path) -> None:
 
 
 def save_velocity_trends(rows: list[dict], fig_dir: Path) -> None:
-    """Plot velocity against sample mass response to expose setting-level trends."""
+    """Plot velocity against positive removed sample mass to expose setting-level trends."""
     fig, ax = plt.subplots(figsize=(6.8, 4.8))
     velocities = row_values(rows, "velocity_value")
-    changes = row_values(rows, "sample_mass_change_g")
-    ax.scatter(velocities, changes, s=70, color="#1f4e79")
-    for row in rows:
-        label = str(row["experiment"]).split("_", 1)[1]
+    removed = row_values(rows, "sample_mass_removed_g")
+    ax.scatter(velocities, removed, s=70, color="#1f4e79")
+    for row, label in zip(rows, experiment_labels(rows), strict=True):
         ax.annotate(
             label,
-            (row["velocity_value"], row["sample_mass_change_g"]),
+            (row["velocity_value"], row["sample_mass_removed_g"]),
             fontsize=7,
         )
     ax.axhline(0.0, color="black", linewidth=1)
     ax.set_xlabel("Raster velocity (mm/s)")
-    ax.set_ylabel("After - before sample weight (g)")
-    ax.set_title("Sample Mass Change vs Raster Velocity")
+    ax.set_ylabel("Sample mass removed (g)")
+    ax.set_title("Sample Mass Removed vs Raster Velocity")
     ax.grid(alpha=0.25)
     fig.tight_layout()
     fig.savefig(fig_dir / "velocity_vs_sample_mass_change.png")
@@ -228,7 +251,7 @@ def save_velocity_trends(rows: list[dict], fig_dir: Path) -> None:
 
 
 def save_temperature_summary(rows: list[dict], fig_dir: Path) -> None:
-    """Plot temperature fields when handwritten info.txt includes them."""
+    """Plot recorded temperatures by run when handwritten info.txt includes them."""
     temp_cols = [
         col
         for col in ["temp_1_value", "temp_2_value", "temp_3_value"]
@@ -238,23 +261,15 @@ def save_temperature_summary(rows: list[dict], fig_dir: Path) -> None:
     if not temp_cols or not temp_rows:
         return
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    width = 0.22
-    x = list(range(len(temp_rows)))
+    x = list(range(len(temp_cols)))
     colors = ["#1f4e79", "#d96c2c", "#2e7d32"]
-    offsets = [width * (idx - (len(temp_cols) - 1) / 2.0) for idx in range(len(temp_cols))]
-    for offset, col, color in zip(offsets, temp_cols, colors, strict=False):
-        values = [row.get(col, float("nan")) for row in temp_rows]
-        ax.bar(
-            [idx + offset for idx in x],
-            values,
-            width=width,
-            label=col.replace("_value", ""),
-            color=color,
-        )
+    for row, label, color in zip(temp_rows, experiment_labels(temp_rows), colors, strict=False):
+        values = [row.get(col, float("nan")) for col in temp_cols]
+        ax.plot(x, values, marker="o", linewidth=2, label=label, color=color)
     ax.set_xticks(x)
-    ax.set_xticklabels(experiment_labels(temp_rows), rotation=35, ha="right")
+    ax.set_xticklabels([f"run_{idx + 1}" for idx in x])
     ax.set_ylabel("Temperature")
-    ax.set_title("Recorded Temperatures")
+    ax.set_title("Recorded Temperature by Run")
     ax.grid(axis="y", alpha=0.25)
     ax.legend(frameon=False)
     fig.tight_layout()
@@ -270,6 +285,7 @@ def write_outputs(rows: list[dict], out_dir: Path) -> None:
     write_markdown_summary(rows, out_dir / "info_txt_summary.md")
     save_weight_before_after(rows, fig_dir)
     save_sample_mass_change(rows, fig_dir)
+    save_luken_tissue_comparison(rows, fig_dir)
     save_collected_mass_summary(rows, fig_dir)
     save_velocity_trends(rows, fig_dir)
     save_temperature_summary(rows, fig_dir)

@@ -168,8 +168,8 @@ def load_raw(path):
     valid = np.isfinite(xyz).all(1) & (np.abs(xyz).sum(1) > 1e-9)
     return xyz[valid]
 
-def load_clean(path, z_gate=(0.10, 0.22), with_stats=False):
-    """Drop invalid -> z-gate to working distance -> statistical outlier removal."""
+def load_clean(path, z_gate=(0.08, 0.22), with_stats=False):
+    """Drop invalid -> keep near meat surface while rejecting far background -> statistical outlier removal."""
     pc = o3d.io.read_point_cloud(path)
     xyz = np.asarray(pc.points)
     valid = np.isfinite(xyz).all(1) & (np.abs(xyz).sum(1) > 1e-9)
