@@ -106,6 +106,8 @@ def test_launch_files_use_sensor_only_recording_defaults():
     assert "raster.yaml" in experiment_launch
     assert "motion.yaml" in experiment_launch
     assert "supervisor.yaml" in experiment_launch
+    assert "SetEnvironmentVariable" in experiment_launch
+    assert '"FR3_SONOPET_REPO", str(repo_root)' in experiment_launch
     assert "supervisor.yaml" in fake_experiment_launch
     assert "parameters=[motion_config]" in experiment_launch
     assert "parameters=[supervisor_config]" in experiment_launch

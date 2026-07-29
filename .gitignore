@@ -33,6 +33,7 @@ ros2_ws/src/realsense-ros/
 artifacts/
 data_collection/
 Python_SonoDAQ/run_outputs/
+.reference/
 *.bag/
 *.db3
 *.mcap

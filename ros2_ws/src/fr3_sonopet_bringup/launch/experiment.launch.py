@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -45,6 +45,7 @@ def _description_include(name: str):
 
 def generate_launch_description():
     bringup_share = Path(get_package_share_directory("fr3_sonopet_bringup"))
+    repo_root = bringup_share.parents[4]
     raster_config = yaml.safe_load(
         (bringup_share / "config" / "raster.yaml").read_text(encoding="utf-8")
     )["raster"]
@@ -106,6 +107,7 @@ def generate_launch_description():
     )
     return LaunchDescription(
         [
+            SetEnvironmentVariable("FR3_SONOPET_REPO", str(repo_root)),
             DeclareLaunchArgument("rviz", default_value="false"),
             _include("franka.launch.py"),
             sensor_stack,
